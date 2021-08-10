@@ -39,7 +39,6 @@ data class Packet(val data: List<ByteArray>)
  * If you want to filter out several types of [pid] package types, use a `SharedFlow`.
  */
 fun Flow<TsPacket>.pesOrPsi(pid: Pid) = mapNotNull { packet ->
-    Log.e("PES", "pid: ${packet.pid}, payloadUnitStartIndicator: ${packet.payloadUnitStartIndicator}")
     packet.takeIf { it.pid == pid }
 }
     .chunked()

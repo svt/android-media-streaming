@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import se.svt.videoplayer.container.ts.Pid
 import se.svt.videoplayer.container.ts.pat.PAT_ID
 import se.svt.videoplayer.container.ts.pat.pat
+import se.svt.videoplayer.container.ts.pes.pes
 import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
 import se.svt.videoplayer.container.ts.pmt.pmt
 import se.svt.videoplayer.container.ts.psi.psi
@@ -63,12 +64,19 @@ class MainActivity : AppCompatActivity() {
                         Log.e("PAT", "${it}")
                     }*/
 
-                tsFlow.pesOrPsi(Pid(32)) // TODO
+                /*tsFlow.pesOrPsi(Pid(32)) // TODO
                     .psi()
                     .mapNotNull { it.ok } // TODO: Handle errors
                     .pmt()
                     .collect {
                         Log.e("PMT", "${it}")
+                    }*/
+
+                tsFlow.pesOrPsi(Pid(80)) // TODO
+                    .pes()
+                    .mapNotNull { it.ok } // TODO: Handle errors
+                    .collect {
+                        Log.e("PES", "${it}")
                     }
             }
         }
