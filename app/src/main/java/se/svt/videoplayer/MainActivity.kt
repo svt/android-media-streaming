@@ -45,7 +45,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         //val byteChannel = ByteChannel()
-        val pesChannel = Channel<ByteArray>(capacity = 10)
+        val pesChannel = Channel<ByteArray>(capacity = 1000)
         val bufferedReceiverChannel = BufferedReceiverChannel(pesChannel)
 
         CoroutineScope(Dispatchers.IO).launch {
@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
                     .pes()
                     .mapNotNull { it.ok } // TODO: Handle errors
                     .collect { pes ->
-                        Log.e("PES", "size: ${pes.data.size}, ${pes}")
+                        //Log.e("PES", "size: ${pes.data.size}, ${pes}")
                         //byteChannel.writeFully(pes.data)
                         pesChannel.send(pes.data)
                     }
@@ -119,25 +119,22 @@ class MainActivity : AppCompatActivity() {
                         mediaCodec.setCallback(object : MediaCodec.Callback() {
                             override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
                                 codec.getInputBuffer(index)?.let { buffer ->
-
-                                    lifecycleScope.launch(context = Dispatchers.IO) {
-                                        val size = bufferedReceiverChannel.receiveAvailableTo(buffer)
-                                        //val size = byteChannel.readAvailable(buffer)
-                                        if (size == -1) {
-                                            Log.e("MainActivity", "byteChannel closed")
-                                        } else {
-                                            Log.e(
-                                                MainActivity::class.java.simpleName,
-                                                "index: $index size: $size"
-                                            )
-                                            codec.queueInputBuffer(
-                                                index,
-                                                0,
-                                                size,
-                                                System.nanoTime() / 1000, // TODO
-                                                0
-                                            )
-                                        }
+                                    val size = bufferedReceiverChannel.receiveAvailableTo(buffer)
+                                    //val size = byteChannel.readAvailable(buffer)
+                                    if (size == -1) {
+                                        Log.e("MainActivity", "byteChannel closed")
+                                    } else {
+                                        /*Log.e(
+                                            MainActivity::class.java.simpleName,
+                                            "index: $index size: $size"
+                                        )*/
+                                        codec.queueInputBuffer(
+                                            index,
+                                            0,
+                                            size,
+                                            System.nanoTime() / 1000, // TODO
+                                            0
+                                        )
                                     }
                                 }
                             }
@@ -273,26 +270,31 @@ private class BufferedReceiverChannel(val receiverChannel: ReceiveChannel<ByteAr
 
     fun receiveAvailableTo(buffer: ByteBuffer): Int {
         var written = 0
-        buffer.remaining()
-        current?.let { (byteArray, offset) ->
-            val length = min(buffer.remaining(), byteArray.size - offset)
-            buffer.put(byteArray, offset, length)
-            written += length
-            val fullyConsumed = length == byteArray.size - offset
-            current = if (fullyConsumed)
-                null
-            else
-                byteArray to offset + length
-        }
 
-        if (buffer.remaining() > 0) {
-            receiverChannel.tryReceive().getOrNull()?.let { byteArray ->
-                val length = min(buffer.remaining(), byteArray.size)
-                buffer.put(byteArray, 0, length)
+        while (buffer.remaining() > 0) {
+            current?.let { (byteArray, offset) ->
+                val length = min(buffer.remaining(), byteArray.size - offset)
+                buffer.put(byteArray, offset, length)
                 written += length
+                val fullyConsumed = length == byteArray.size - offset
+                current = if (fullyConsumed)
+                    null
+                else
+                    byteArray to offset + length
+            }
 
-                if (byteArray.size > length)
-                    current = byteArray to length
+            if (buffer.remaining() > 0) {
+                val tryReceive = receiverChannel.tryReceive()
+                if (tryReceive.isClosed)
+                    return -1
+                tryReceive.getOrNull()?.let { byteArray ->
+                    val length = min(buffer.remaining(), byteArray.size)
+                    buffer.put(byteArray, 0, length)
+                    written += length
+
+                    if (byteArray.size > length)
+                        current = byteArray to length
+                }
             }
         }
 
