@@ -12,6 +12,26 @@ import android.util.Log
 import android.view.SurfaceHolder
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.utils.io.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.launch
+import se.svt.videoplayer.container.ts.Pid
+import se.svt.videoplayer.container.ts.pat.PAT_ID
+import se.svt.videoplayer.container.ts.pat.pat
+import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
+import se.svt.videoplayer.container.ts.pmt.pmt
+import se.svt.videoplayer.container.ts.psi.psi
+import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import java.util.concurrent.TimeUnit
 
@@ -20,6 +40,39 @@ class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.M)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val client = HttpClient(CIO) {
+            expectSuccess = true
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val urls = (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
+            urls.forEach {
+                val get: HttpResponse = client.get(it)
+                val channel: ByteReadChannel = get.receive()
+                val tsFlow = tsFlow(channel)
+                    .mapNotNull { it.ok } // TODO: Handle errors
+                    //.shareIn(this, SharingStarted.Lazily)
+
+                /*tsFlow
+                    .pesOrPsi(PAT_ID)
+                    .psi()
+                    .mapNotNull { it.ok } // TODO: Handle errors
+                    .pat()
+                    .collect {
+                        Log.e("PAT", "${it}")
+                    }*/
+
+                tsFlow.pesOrPsi(Pid(32)) // TODO
+                    .psi()
+                    .mapNotNull { it.ok } // TODO: Handle errors
+                    .pmt()
+                    .collect {
+                        Log.e("PMT", "${it}")
+                    }
+            }
+        }
+
         setContentView(
             ActivityMainBinding.inflate(layoutInflater).apply {
                 surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
@@ -35,6 +88,8 @@ class MainActivity : AppCompatActivity() {
 
                         val mediaExtractor = MediaExtractor().apply {
                             setDataSource("https://storage.googleapis.com/wvmedia/clear/h264/tears/tears_h264_baseline_240p_800.mp4") // TODO // TODO: Warning: This is a blocking call?
+                            //setDataSource("https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-ts-avc.m3u8") // TODO // TODO: Warning: This is a blocking call?
+                            //setDataSource("https://storage.googleapis.com/wvmedia/clear/h264/tears/tears.mpd") // TODO // TODO: Warning: This is a blocking call?
                         }
 
                         (0 until mediaExtractor.trackCount).map {
