@@ -1,7 +1,6 @@
 package se.svt.videoplayer
 
 import android.media.MediaCodec
-import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaSync
@@ -12,6 +11,7 @@ import android.util.Log
 import android.view.SurfaceHolder
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -20,21 +20,19 @@ import io.ktor.client.statement.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
 import se.svt.videoplayer.container.ts.Pid
-import se.svt.videoplayer.container.ts.pat.PAT_ID
-import se.svt.videoplayer.container.ts.pat.pat
 import se.svt.videoplayer.container.ts.pes.pes
 import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
-import se.svt.videoplayer.container.ts.pmt.pmt
-import se.svt.videoplayer.container.ts.psi.psi
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
+import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
+import kotlin.math.min
 
 
 class MainActivity : AppCompatActivity() {
@@ -45,6 +43,10 @@ class MainActivity : AppCompatActivity() {
         val client = HttpClient(CIO) {
             expectSuccess = true
         }
+
+        //val byteChannel = ByteChannel()
+        val pesChannel = Channel<ByteArray>(capacity = 10)
+        val bufferedReceiverChannel = BufferedReceiverChannel(pesChannel)
 
         CoroutineScope(Dispatchers.IO).launch {
             val urls = (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
@@ -75,8 +77,10 @@ class MainActivity : AppCompatActivity() {
                 tsFlow.pesOrPsi(Pid(80)) // TODO
                     .pes()
                     .mapNotNull { it.ok } // TODO: Handle errors
-                    .collect {
-                        Log.e("PES", "${it}")
+                    .collect { pes ->
+                        Log.e("PES", "size: ${pes.data.size}, ${pes}")
+                        //byteChannel.writeFully(pes.data)
+                        pesChannel.send(pes.data)
                     }
             }
         }
@@ -100,7 +104,69 @@ class MainActivity : AppCompatActivity() {
                             //setDataSource("https://storage.googleapis.com/wvmedia/clear/h264/tears/tears.mpd") // TODO // TODO: Warning: This is a blocking call?
                         }
 
-                        (0 until mediaExtractor.trackCount).map {
+                        val mediaCodec = MediaCodec.createByCodecName("OMX.android.goldfish.h264.decoder")
+                        mediaCodec.configure(
+                            MediaFormat().apply {
+                                                setString("mime", "video/avc")
+                                setInteger("width", 1280)
+                                setInteger("height", 720)
+                            },
+                            surface,
+                            null,
+                            0
+                        )
+
+                        mediaCodec.setCallback(object : MediaCodec.Callback() {
+                            override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+                                codec.getInputBuffer(index)?.let { buffer ->
+
+                                    lifecycleScope.launch(context = Dispatchers.IO) {
+                                        val size = bufferedReceiverChannel.receiveAvailableTo(buffer)
+                                        //val size = byteChannel.readAvailable(buffer)
+                                        if (size == -1) {
+                                            Log.e("MainActivity", "byteChannel closed")
+                                        } else {
+                                            Log.e(
+                                                MainActivity::class.java.simpleName,
+                                                "index: $index size: $size"
+                                            )
+                                            codec.queueInputBuffer(
+                                                index,
+                                                0,
+                                                size,
+                                                System.nanoTime() / 1000, // TODO
+                                                0
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            override fun onOutputBufferAvailable(
+                                codec: MediaCodec,
+                                index: Int,
+                                info: MediaCodec.BufferInfo
+                            ) {
+                                mediaCodec.releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
+                            }
+
+                            override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+                                TODO("Not yet implemented")
+                            }
+
+                            override fun onOutputFormatChanged(
+                                codec: MediaCodec,
+                                format: MediaFormat
+                            ) {
+                                Log.e(MainActivity::class.java.simpleName, "onOutputFormatChanged $format")
+
+                            }
+                        })
+
+                        mediaCodec.start()
+
+
+                        /*(0 until mediaExtractor.trackCount).map {
                             val format = mediaExtractor.getTrackFormat(it)
                             val mime = format.getString(MediaFormat.KEY_MIME)
                             // TODO: Is a track both audio and video? If we have two codecs but one extractor, how does that work??
@@ -179,7 +245,7 @@ class MainActivity : AppCompatActivity() {
 
 
                             }
-                        }
+                        }*/
 
                         mediaSync.playbackParams = PlaybackParams().setSpeed(1.0f)
                     }
@@ -199,5 +265,37 @@ class MainActivity : AppCompatActivity() {
                 })
             }.root
         )
+    }
+}
+
+private class BufferedReceiverChannel(val receiverChannel: ReceiveChannel<ByteArray>) {
+    private var current: Pair<ByteArray, Int>? = null
+
+    fun receiveAvailableTo(buffer: ByteBuffer): Int {
+        var written = 0
+        buffer.remaining()
+        current?.let { (byteArray, offset) ->
+            val length = min(buffer.remaining(), byteArray.size - offset)
+            buffer.put(byteArray, offset, length)
+            written += length
+            val fullyConsumed = length == byteArray.size - offset
+            current = if (fullyConsumed)
+                null
+            else
+                byteArray to offset + length
+        }
+
+        if (buffer.remaining() > 0) {
+            receiverChannel.tryReceive().getOrNull()?.let { byteArray ->
+                val length = min(buffer.remaining(), byteArray.size)
+                buffer.put(byteArray, 0, length)
+                written += length
+
+                if (byteArray.size > length)
+                    current = byteArray to length
+            }
+        }
+
+        return written
     }
 }

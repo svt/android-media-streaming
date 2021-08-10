@@ -46,6 +46,7 @@ fun Flow<TsPacket>.pesOrPsi(pid: Pid) = mapNotNull { packet ->
 
 // TODO: Extract from this file and generalize on T
 // TODO: Handle discontinuity: Scrap all data until next payloadUnitStartIndicator
+// T
 private fun Flow<TsPacket>.chunked() = flow {
     var accumulator = listOf<ByteArray>()
     collect { packet ->
