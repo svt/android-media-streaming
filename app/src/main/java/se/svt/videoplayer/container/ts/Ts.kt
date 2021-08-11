@@ -1,5 +1,6 @@
 package se.svt.videoplayer.container.ts
 
+import android.util.Log
 import io.ktor.utils.io.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.flow.Flow
@@ -68,12 +69,14 @@ fun tsFlow(channel: ByteReadChannel) : Flow<Result<Packet, Error>> {
 
                 val adaptationFieldLength =
                     if (hasAdaptionField) channel.readByte().toUByte().toInt() else 0
+
                 channel.discardExact(adaptationFieldLength.toLong())
 
                 val packetSize =
                     PACKET_SIZE - HEADER_SIZE - adaptationFieldLength - (if (hasAdaptionField) 1 else 0)
-                val byteArray = ByteArray(packetSize)
-                channel.readFully(byteArray)
+                val byteArray = ByteArray(packetSize).apply {
+                    channel.readFully(this)
+                }
 
                 val pid = Pid((0x1fff00 and header) shr 8)
 
@@ -103,14 +106,23 @@ fun tsFlow(channel: ByteReadChannel) : Flow<Result<Packet, Error>> {
                         } else
                             */Result.Success(Packet(byteArray, pid, payloadUnitStartIndicator, discontinuityFlag))
                     }
+
+                    Log.e("TS", "EMITTING")
                     emit(result)
+                    Log.e("TS", "EMITTED")
                     //}
+                } else {
+                    Log.e("SKIPPPP", "SKIPPING ${repeatedContinuityCounter} $transportError")
                 }
             }
         } catch (e: ClosedReceiveChannelException) {
             // Just terminate the flow
+            Log.e("TSDONE", "TSDONEEEE")
         } catch (e: IOException) {
+            Log.e("IOEXCEPTION", "TS ${e}")
             emit(Result.Error<Packet, Error>(Error.IO(e)))
+        } catch (e: Throwable) {
+            Log.e("THROWABLE", "THROWABLE: $e")
         }
     }
 }

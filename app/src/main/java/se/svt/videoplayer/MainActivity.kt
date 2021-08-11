@@ -11,7 +11,6 @@ import android.util.Log
 import android.view.SurfaceHolder
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -22,7 +21,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import se.svt.videoplayer.container.ts.Pid
@@ -49,40 +51,50 @@ class MainActivity : AppCompatActivity() {
         val bufferedReceiverChannel = BufferedReceiverChannel(pesChannel)
 
         CoroutineScope(Dispatchers.IO).launch {
-            val urls = (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
-            urls.forEach {
-                val get: HttpResponse = client.get(it)
-                val channel: ByteReadChannel = get.receive()
-                val tsFlow = tsFlow(channel)
-                    .mapNotNull { it.ok } // TODO: Handle errors
+            (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
+                .asFlow()
+                .flatMapConcat {
+                    Log.e("HTTP", "GET ${it}")
+                    val get: HttpResponse = client.get(it)
+                    Log.e("HTTP", "CHANNEL ${it}")
+                    val channel: ByteReadChannel = get.receive()
+                    Log.e("HTTP", "GOT CHANNEL ${it}")
+                    val tsFlow = tsFlow(channel)
+                        .buffer()
+                        .mapNotNull { it.ok } // TODO: Handle errors
+                        .buffer()
                     //.shareIn(this, SharingStarted.Lazily)
 
-                /*tsFlow
-                    .pesOrPsi(PAT_ID)
-                    .psi()
-                    .mapNotNull { it.ok } // TODO: Handle errors
-                    .pat()
-                    .collect {
-                        Log.e("PAT", "${it}")
-                    }*/
+                    /*tsFlow
+                        .pesOrPsi(PAT_ID)
+                        .psi()
+                        .mapNotNull { it.ok } // TODO: Handle errors
+                        .pat()
+                        .collect {
+                            Log.e("PAT", "${it}")
+                        }*/
 
-                /*tsFlow.pesOrPsi(Pid(32)) // TODO
-                    .psi()
-                    .mapNotNull { it.ok } // TODO: Handle errors
-                    .pmt()
-                    .collect {
-                        Log.e("PMT", "${it}")
-                    }*/
+                    /*tsFlow.pesOrPsi(Pid(32)) // TODO
+                        .psi()
+                        .mapNotNull { it.ok } // TODO: Handle errors
+                        .pmt()
+                        .collect {
+                            Log.e("PMT", "${it}")
+                        }*/
 
-                tsFlow.pesOrPsi(Pid(80)) // TODO
-                    .pes()
-                    .mapNotNull { it.ok } // TODO: Handle errors
-                    .collect { pes ->
-                        //Log.e("PES", "size: ${pes.data.size}, ${pes}")
-                        //byteChannel.writeFully(pes.data)
-                        pesChannel.send(pes.data)
-                    }
-            }
+                    tsFlow.pesOrPsi(Pid(80)) // TODO
+                        .buffer()
+                        .pes()
+                        .buffer()
+                }
+                .mapNotNull { it.ok } // TODO: Handle errors
+                .buffer()
+                .collect { pes ->
+                    Log.e("PES", "${pes.data.size}")
+                    //byteChannel.writeFully(pes.data)
+                    pesChannel.send(pes.data)
+                }
+            Log.e("MainActivity", "I AM DONE COLLECTING!!")
         }
 
         setContentView(
@@ -274,6 +286,7 @@ private class BufferedReceiverChannel(val receiverChannel: ReceiveChannel<ByteAr
         while (buffer.remaining() > 0) {
             current?.let { (byteArray, offset) ->
                 val length = min(buffer.remaining(), byteArray.size - offset)
+                //Log.e("WRITE", "writing $length")
                 buffer.put(byteArray, offset, length)
                 written += length
                 val fullyConsumed = length == byteArray.size - offset
@@ -287,17 +300,22 @@ private class BufferedReceiverChannel(val receiverChannel: ReceiveChannel<ByteAr
                 val tryReceive = receiverChannel.tryReceive()
                 if (tryReceive.isClosed)
                     return -1
-                tryReceive.getOrNull()?.let { byteArray ->
+                val byteArray = tryReceive.getOrNull()
+                if (byteArray != null) {
                     val length = min(buffer.remaining(), byteArray.size)
+                    //Log.e("WRITE1", "writing $length, remaining: ${buffer.remaining()}")
                     buffer.put(byteArray, 0, length)
                     written += length
 
                     if (byteArray.size > length)
                         current = byteArray to length
+                } else {
+                    break
                 }
             }
         }
 
+        //Log.e("WRITTEN", "$written")
         return written
     }
 }

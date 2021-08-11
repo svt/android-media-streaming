@@ -59,6 +59,7 @@ private fun Flow<TsPacket>.chunked() = flow {
             accumulator + packet.data
         }
     }
+
     if (accumulator.isNotEmpty())
         emit(accumulator)
 }
