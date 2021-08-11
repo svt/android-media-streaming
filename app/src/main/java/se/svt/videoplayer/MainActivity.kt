@@ -5,9 +5,9 @@ import android.media.MediaFormat
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.view.SurfaceHolder
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -16,7 +16,6 @@ import io.ktor.client.statement.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
@@ -29,8 +28,7 @@ import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
-import java.nio.ByteBuffer
-import kotlin.math.min
+import se.svt.videoplayer.surface.surfaceConfigurationFlow
 
 
 class MainActivity : AppCompatActivity() {
@@ -44,90 +42,81 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(
             ActivityMainBinding.inflate(layoutInflater).apply {
-                surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
-                    override fun surfaceCreated(holder: SurfaceHolder) {
 
-                        //val codecName = "OMX.android.goldfish.h264.decoder"
-                        val codecName = "c2.qti.avc.decoder"
-                        val mediaCodec = MediaCodec.createByCodecName(codecName)
-                        val bufferIndexChannel = mediaCodec.videoInputBufferIndicesChannel()
-                        mediaCodec.apply {
-                            configure(
-                                MediaFormat().apply {
-                                    setString("mime", "video/avc")
-                                    setInteger("width", 1280)
-                                    setInteger("height", 720)
-                                },
-                                holder.surface,
-                                null,
-                                0
-                            )
+                lifecycleScope.launch {
+                    surfaceView.holder.surfaceConfigurationFlow()
+                        .mapNotNull { it }
+                        .collect { surfaceConfiguration ->
+                            // TODO: Don't redo all the work when we get a new surface
 
-                            start()
-                        }
+                            //val codecName = "OMX.android.goldfish.h264.decoder"
+                            val codecName = "c2.qti.avc.decoder"
+                            val mediaCodec = MediaCodec.createByCodecName(codecName)
+                            val bufferIndexChannel = mediaCodec.videoInputBufferIndicesChannel()
+                            mediaCodec.apply {
+                                configure(
+                                    MediaFormat().apply {
+                                        setString("mime", "video/avc")
+                                        setInteger("width", 1280)
+                                        setInteger("height", 720)
+                                    },
+                                    surfaceConfiguration.surface,
+                                    null,
+                                    0
+                                )
 
-                        CoroutineScope(Dispatchers.IO).launch {
-                            (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
-                                .asFlow()
-                                .flatMapConcat {
-                                    Log.e("HTTP", "GET ${it}")
-                                    val get: HttpResponse = client.get(it)
-                                    val channel: ByteReadChannel = get.receive()
-                                    val tsFlow = tsFlow(channel)
-                                        .buffer()
-                                        .mapNotNull { it.ok } // TODO: Handle errors
-                                        .buffer()
-                                    //.shareIn(this, SharingStarted.Lazily)
+                                start()
+                            }
 
-                                    /*tsFlow
-                                        .pesOrPsi(PAT_ID)
-                                        .psi()
-                                        .mapNotNull { it.ok } // TODO: Handle errors
-                                        .pat()
-                                        .collect {
-                                            Log.e("PAT", "${it}")
-                                        }*/
+                            CoroutineScope(Dispatchers.IO).launch {
+                                (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
+                                    .asFlow()
+                                    .flatMapConcat {
+                                        Log.e("HTTP", "GET ${it}")
+                                        val get: HttpResponse = client.get(it)
+                                        val channel: ByteReadChannel = get.receive()
+                                        val tsFlow = tsFlow(channel)
+                                            .buffer()
+                                            .mapNotNull { it.ok } // TODO: Handle errors
+                                            .buffer()
+                                        //.shareIn(this, SharingStarted.Lazily)
 
-                                    /*tsFlow.pesOrPsi(Pid(32)) // TODO
-                                        .psi()
-                                        .mapNotNull { it.ok } // TODO: Handle errors
-                                        .pmt()
-                                        .collect {
-                                            Log.e("PMT", "${it}")
-                                        }*/
+                                        /*tsFlow
+                                            .pesOrPsi(PAT_ID)
+                                            .psi()
+                                            .mapNotNull { it.ok } // TODO: Handle errors
+                                            .pat()
+                                            .collect {
+                                                Log.e("PAT", "${it}")
+                                            }*/
 
-                                    tsFlow.pesOrPsi(Pid(80)) // TODO
-                                        .buffer()
-                                        .pes()
-                                        .buffer()
-                                }
-                                .mapNotNull { it.ok } // TODO: Handle errors
-                                .buffer()
-                                .collect { pes ->
-                                    bufferIndexChannel.receive { inputBuffer ->
-                                        inputBuffer.put(pes.data)
+                                        /*tsFlow.pesOrPsi(Pid(32)) // TODO
+                                            .psi()
+                                            .mapNotNull { it.ok } // TODO: Handle errors
+                                            .pmt()
+                                            .collect {
+                                                Log.e("PMT", "${it}")
+                                            }*/
+
+                                        tsFlow.pesOrPsi(Pid(80)) // TODO
+                                            .buffer()
+                                            .pes()
+                                            .buffer()
                                     }
-                                        .mapErr {
-                                            Log.e("MainActivity", "buffer index: $it")
+                                    .mapNotNull { it.ok } // TODO: Handle errors
+                                    .buffer()
+                                    .collect { pes ->
+                                        bufferIndexChannel.receive { inputBuffer ->
+                                            inputBuffer.put(pes.data)
                                         }
-                                }
-                            Log.e("MainActivity", "I AM DONE COLLECTING!!")
+                                            .mapErr {
+                                                Log.e("MainActivity", "buffer index: $it")
+                                            }
+                                    }
+                                Log.e("MainActivity", "I AM DONE COLLECTING!!")
+                            }
                         }
-                    }
-
-                    override fun surfaceChanged(
-                        holder: SurfaceHolder,
-                        format: Int,
-                        width: Int,
-                        height: Int
-                    ) {
-                        Log.e(MainActivity::class.java.simpleName, "surfaceChanged $format, $width, $height")
-                    }
-
-                    override fun surfaceDestroyed(holder: SurfaceHolder) {
-                        Log.e(MainActivity::class.java.simpleName, "surfaceDestroyed")
-                    }
-                })
+                }
             }.root
         )
     }
