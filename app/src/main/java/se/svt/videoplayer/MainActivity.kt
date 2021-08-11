@@ -135,7 +135,12 @@ class MainActivity : AppCompatActivity() {
                                     Log.e("MainActivity", "ATTEMPT RECEIVE INDEX")
                                     val index = bufferIndexChannel.receive()
                                     Log.e("MainActivity", "GOT RECEIVE INDEX")
-                                    val inputBuffer1 = mediaCodec.getInputBuffer(index)
+                                    val inputBuffer1 = try {
+                                        mediaCodec.getInputBuffer(index)
+                                    } catch (e: MediaCodec.CodecException) {
+                                        Log.e("MainActivity", "getInputBuffer", e)
+                                        throw e
+                                    }
                                     if (inputBuffer1 == null)
                                         Log.e("MainActivity", "FATAL: buffer $index IS NULL")
 
@@ -147,13 +152,17 @@ class MainActivity : AppCompatActivity() {
                                         inputBuffer.put(pes.data)
 
                                         Log.e("MainActivity", "queueing ${pes.data.size}")
-                                        mediaCodec.queueInputBuffer(
-                                            index,
-                                            0,
-                                            pes.data.size,
-                                            0, // TODO
-                                            0
-                                        )
+                                        try {
+                                            mediaCodec.queueInputBuffer(
+                                                index,
+                                                0,
+                                                pes.data.size,
+                                                0, // TODO
+                                                0
+                                            )
+                                        } catch (e: MediaCodec.CodecException) {
+                                            Log.e("MainActivity", "queueInputBuffer", e)
+                                        }
                                     }
                                 }
                             Log.e("MainActivity", "I AM DONE COLLECTING!!")
