@@ -52,12 +52,12 @@ class MainActivity : AppCompatActivity() {
                     override fun surfaceCreated(holder: SurfaceHolder) {
                         val initialSurface = holder.surface
 
-                        val mediaSync = MediaSync().apply {
+                        /*val mediaSync = MediaSync().apply {
                             playbackParams = PlaybackParams().setSpeed(0.0f)
                             setSurface(initialSurface)
-                        }
+                        }*/
 
-                        val surface = mediaSync.createInputSurface()
+                        val surface = initialSurface//mediaSync.createInputSurface()
 
                         val mediaExtractor = MediaExtractor().apply {
                             setDataSource("https://storage.googleapis.com/wvmedia/clear/h264/tears/tears_h264_baseline_240p_800.mp4") // TODO // TODO: Warning: This is a blocking call?
@@ -65,21 +65,50 @@ class MainActivity : AppCompatActivity() {
                             //setDataSource("https://storage.googleapis.com/wvmedia/clear/h264/tears/tears.mpd") // TODO // TODO: Warning: This is a blocking call?
                         }
 
-                        val mediaCodec = MediaCodec.createByCodecName("OMX.android.goldfish.h264.decoder")
-                        mediaCodec.configure(
-                            MediaFormat().apply {
-                                                setString("mime", "video/avc")
-                                setInteger("width", 1280)
-                                setInteger("height", 720)
-                            },
-                            surface,
-                            null,
-                            0
-                        )
-
-                        val pesChannel = Channel<ByteArray>(capacity = 1000)
                         val bufferIndexChannel = Channel<Int>(capacity = 1000)
-                        val bufferedReceiverChannel = BufferedReceiverChannel(pesChannel)
+
+                        val mediaCodec = MediaCodec.createByCodecName("OMX.android.goldfish.h264.decoder")
+                            .apply {
+                                configure(
+                                    MediaFormat().apply {
+                                        setString("mime", "video/avc")
+                                        setInteger("width", 1280)
+                                        setInteger("height", 720)
+                                    },
+                                    surface,
+                                    null,
+                                    0
+                                )
+                                setCallback(object : MediaCodec.Callback() {
+                                    override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+                                        if (bufferIndexChannel.trySend(index).isFailure) {
+                                            Log.e("MainActivity", "FAILED TO SEND BUFFER INDEX!!!")
+                                        }
+                                    }
+
+                                    override fun onOutputBufferAvailable(
+                                        codec: MediaCodec,
+                                        index: Int,
+                                        info: MediaCodec.BufferInfo
+                                    ) {
+                                        releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
+                                    }
+
+                                    override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+                                        TODO("Not yet implemented")
+                                    }
+
+                                    override fun onOutputFormatChanged(
+                                        codec: MediaCodec,
+                                        format: MediaFormat
+                                    ) {
+                                        Log.e(MainActivity::class.java.simpleName, "onOutputFormatChanged $format")
+
+                                    }
+                                })
+
+                                start()
+                            }
 
                         CoroutineScope(Dispatchers.IO).launch {
                             (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
@@ -139,65 +168,9 @@ class MainActivity : AppCompatActivity() {
                                             0
                                         )
                                     }
-
-                                    //byteChannel.writeFully(pes.data)
-                                    //pesChannel.send(pes.data)
                                 }
                             Log.e("MainActivity", "I AM DONE COLLECTING!!")
                         }
-
-                        mediaCodec.setCallback(object : MediaCodec.Callback() {
-                            override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                                if (bufferIndexChannel.trySend(index).isFailure) {
-                                    Log.e("MainActivity", "FAILED TO SEND BUFFER INDEX!!!")
-                                }
-
-                                /*val inputBuffer = codec.getInputBuffer(index)
-                                inputBuffer?.let { buffer ->
-                                    //Log.e("MainActivity", "ATTEMPTING TO RECEIVE: ${buffer.remaining()}")
-                                    val size = bufferedReceiverChannel.receiveAvailableTo(buffer)
-                                    //val size = byteChannel.readAvailable(buffer)
-                                    //Log.e("MainActivity", "receiveAvailableTo: $size")
-                                    if (size == -1) {
-                                        Log.e("MainActivity", "byteChannel closed")
-                                    } else {
-                                        /*Log.e(
-                                            MainActivity::class.java.simpleName,
-                                            "index: $index size: $size"
-                                        )*/
-                                        codec.queueInputBuffer(
-                                            index,
-                                            0,
-                                            size,
-                                            0, // TODO
-                                            0
-                                        )
-                                    }
-                                }*/
-                            }
-
-                            override fun onOutputBufferAvailable(
-                                codec: MediaCodec,
-                                index: Int,
-                                info: MediaCodec.BufferInfo
-                            ) {
-                                mediaCodec.releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
-                            }
-
-                            override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-                                TODO("Not yet implemented")
-                            }
-
-                            override fun onOutputFormatChanged(
-                                codec: MediaCodec,
-                                format: MediaFormat
-                            ) {
-                                Log.e(MainActivity::class.java.simpleName, "onOutputFormatChanged $format")
-
-                            }
-                        })
-
-                        mediaCodec.start()
 
 
                         /*(0 until mediaExtractor.trackCount).map {
@@ -281,7 +254,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }*/
 
-                        mediaSync.playbackParams = PlaybackParams().setSpeed(1.0f)
+                        //mediaSync.playbackParams = PlaybackParams().setSpeed(1.0f)
                     }
 
                     override fun surfaceChanged(
