@@ -29,6 +29,7 @@ import se.svt.videoplayer.container.ts.pes.pes
 import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
+import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
@@ -47,52 +48,25 @@ class MainActivity : AppCompatActivity() {
             ActivityMainBinding.inflate(layoutInflater).apply {
                 surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) {
-                        val bufferIndexChannel = Channel<Int>(capacity = 1000)
 
                         //val codecName = "OMX.android.goldfish.h264.decoder"
                         val codecName = "c2.qti.avc.decoder"
                         val mediaCodec = MediaCodec.createByCodecName(codecName)
-                            .apply {
-                                setCallback(object : MediaCodec.Callback() {
-                                    override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                                        if (bufferIndexChannel.trySend(index).isFailure) {
-                                            Log.e("MainActivity", "FAILED TO SEND BUFFER INDEX!!!")
-                                        }
-                                    }
+                        val bufferIndexChannel = mediaCodec.videoInputBufferIndicesChannel()
+                        mediaCodec.apply {
+                            configure(
+                                MediaFormat().apply {
+                                    setString("mime", "video/avc")
+                                    setInteger("width", 1280)
+                                    setInteger("height", 720)
+                                },
+                                holder.surface,
+                                null,
+                                0
+                            )
 
-                                    override fun onOutputBufferAvailable(
-                                        codec: MediaCodec,
-                                        index: Int,
-                                        info: MediaCodec.BufferInfo
-                                    ) {
-                                        releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
-                                    }
-
-                                    override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-                                        TODO("Not yet implemented")
-                                    }
-
-                                    override fun onOutputFormatChanged(
-                                        codec: MediaCodec,
-                                        format: MediaFormat
-                                    ) {
-                                        Log.e(MainActivity::class.java.simpleName, "onOutputFormatChanged $format")
-
-                                    }
-                                })
-                                configure(
-                                    MediaFormat().apply {
-                                        setString("mime", "video/avc")
-                                        setInteger("width", 1280)
-                                        setInteger("height", 720)
-                                    },
-                                    holder.surface,
-                                    null,
-                                    0
-                                )
-
-                                start()
-                            }
+                            start()
+                        }
 
                         CoroutineScope(Dispatchers.IO).launch {
                             (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
@@ -133,37 +107,41 @@ class MainActivity : AppCompatActivity() {
                                 .buffer()
                                 .collect { pes ->
                                     Log.e("MainActivity", "ATTEMPT RECEIVE INDEX")
-                                    val index = bufferIndexChannel.receive()
-                                    Log.e("MainActivity", "GOT RECEIVE INDEX")
-                                    val inputBuffer1 = try {
-                                        mediaCodec.getInputBuffer(index)
-                                    } catch (e: MediaCodec.CodecException) {
-                                        Log.e("MainActivity", "getInputBuffer", e)
-                                        throw e
-                                    }
-                                    if (inputBuffer1 == null)
-                                        Log.e("MainActivity", "FATAL: buffer $index IS NULL")
-
-                                    inputBuffer1?.let { inputBuffer ->
-                                        if (inputBuffer.remaining() < pes.data.size) {
-                                            Log.e("MainActivity", "FATAL: buffer isn't big enough")
-                                        }
-
-                                        inputBuffer.put(pes.data)
-
-                                        Log.e("MainActivity", "queueing ${pes.data.size}")
-                                        try {
-                                            mediaCodec.queueInputBuffer(
-                                                index,
-                                                0,
-                                                pes.data.size,
-                                                0, // TODO
-                                                0
-                                            )
+                                    bufferIndexChannel.receive().map { index ->
+                                        Log.e("MainActivity", "GOT RECEIVE INDEX")
+                                        val inputBuffer1 = try {
+                                            mediaCodec.getInputBuffer(index)
                                         } catch (e: MediaCodec.CodecException) {
-                                            Log.e("MainActivity", "queueInputBuffer", e)
+                                            Log.e("MainActivity", "getInputBuffer", e)
+                                            throw e
+                                        }
+                                        if (inputBuffer1 == null)
+                                            Log.e("MainActivity", "FATAL: buffer $index IS NULL")
+
+                                        inputBuffer1?.let { inputBuffer ->
+                                            if (inputBuffer.remaining() < pes.data.size) {
+                                                Log.e("MainActivity", "FATAL: buffer isn't big enough")
+                                            }
+
+                                            inputBuffer.put(pes.data)
+
+                                            Log.e("MainActivity", "queueing ${pes.data.size}")
+                                            try {
+                                                mediaCodec.queueInputBuffer(
+                                                    index,
+                                                    0,
+                                                    pes.data.size,
+                                                    0, // TODO
+                                                    0
+                                                )
+                                            } catch (e: MediaCodec.CodecException) {
+                                                Log.e("MainActivity", "queueInputBuffer", e)
+                                            }
                                         }
                                     }
+                                        .mapErr {
+                                            Log.e("MainActivity", "buffer index: $it")
+                                        }
                                 }
                             Log.e("MainActivity", "I AM DONE COLLECTING!!")
                         }
