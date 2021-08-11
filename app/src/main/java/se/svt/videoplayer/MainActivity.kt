@@ -14,7 +14,6 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.utils.io.*
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
@@ -22,6 +21,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import se.svt.videoplayer.container.ts.Pid
 import se.svt.videoplayer.container.ts.pes.pes
 import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
                         .mapNotNull { it }
                         .collect { surfaceConfiguration ->
                             // TODO: Don't redo all the work when we get a new surface
+                            // TODO: Note that we need to recreate the codec though
 
                             //val codecName = "OMX.android.goldfish.h264.decoder"
                             val codecName = "c2.qti.avc.decoder"
@@ -68,7 +69,7 @@ class MainActivity : AppCompatActivity() {
                                 start()
                             }
 
-                            CoroutineScope(Dispatchers.IO).launch {
+                            withContext(Dispatchers.IO) {
                                 (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
                                     .asFlow()
                                     .flatMapConcat {
