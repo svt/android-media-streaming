@@ -28,7 +28,7 @@ import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
-import se.svt.videoplayer.surface.surfaceConfigurationFlow
+import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
 
 
 class MainActivity : AppCompatActivity() {
@@ -44,9 +44,9 @@ class MainActivity : AppCompatActivity() {
             ActivityMainBinding.inflate(layoutInflater).apply {
 
                 lifecycleScope.launch {
-                    surfaceView.holder.surfaceConfigurationFlow()
+                    surfaceView.holder.surfaceHolderConfigurationFlow()
                         .mapNotNull { it }
-                        .collect { surfaceConfiguration ->
+                        .collect { surfaceHolderConfiguration ->
                             // TODO: Don't redo all the work when we get a new surface
                             // TODO: Note that we need to recreate the codec though
 
@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
                                         setInteger("width", 1280)
                                         setInteger("height", 720)
                                     },
-                                    surfaceConfiguration.surface,
+                                    surfaceHolderConfiguration.surfaceHolder.surface,
                                     null,
                                     0
                                 )
@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
                                 (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
                                     .asFlow()
                                     .flatMapConcat {
-                                        Log.e("HTTP", "GET ${it}")
+                                        Log.e(MainActivity::class.java.simpleName, "Fetch ${it}")
                                         val get: HttpResponse = client.get(it)
                                         val channel: ByteReadChannel = get.receive()
                                         val tsFlow = tsFlow(channel)
@@ -111,10 +111,10 @@ class MainActivity : AppCompatActivity() {
                                             inputBuffer.put(pes.data)
                                         }
                                             .mapErr {
-                                                Log.e("MainActivity", "buffer index: $it")
+                                                Log.e(MainActivity::class.java.simpleName, "buffer index: $it")
                                             }
                                     }
-                                Log.e("MainActivity", "I AM DONE COLLECTING!!")
+                                Log.e(MainActivity::class.java.simpleName, "Stream ended")
                             }
                         }
                 }

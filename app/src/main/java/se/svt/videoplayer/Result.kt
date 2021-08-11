@@ -44,8 +44,8 @@ fun <T, E> Iterable<Result<T, E>>.collect(): Result<List<T>, E> = Result.Success
 )
 
 fun <T, E : Exception> Result<T, E>.orThrow() = when (this) {
-    is Result.Success -> this.data
-    is Result.Error -> throw this.exception
+    is Result.Success -> data
+    is Result.Error -> throw exception
 }
 
 /**
