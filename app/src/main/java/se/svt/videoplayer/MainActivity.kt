@@ -14,6 +14,7 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.utils.io.*
+import io.ktor.utils.io.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
@@ -108,7 +109,15 @@ class MainActivity : AppCompatActivity() {
                                     .buffer()
                                     .collect { pes ->
                                         bufferIndexChannel.receive { inputBuffer ->
-                                            inputBuffer.put(pes.data)
+                                            inputBuffer.put(
+                                                // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
+                                                pes.byteReadChannel.readRemaining().run {
+                                                    ByteArray(remaining.toInt()).apply {
+                                                        readFully(
+                                                            this
+                                                        )
+                                                    }
+                                                })
                                         }
                                             .mapErr {
                                                 Log.e(MainActivity::class.java.simpleName, "buffer index: $it")

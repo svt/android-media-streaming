@@ -1,8 +1,6 @@
 package se.svt.videoplayer.container.ts.pes
 
-import android.util.Log
 import io.ktor.utils.io.*
-import io.ktor.utils.io.core.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import se.svt.videoplayer.Result
@@ -18,8 +16,7 @@ data class Pes(
     val dataAlignmentIndicator: Boolean,
     val dts90Khz: Long?, // TODO: Can these be Duration?
     val pts90Khz: Long?, // TODO: Can these be Duration?
-    // TODO: ByteReadChannel for streaming
-    val data: ByteArray
+    val byteReadChannel: ByteReadChannel
 )
 
 fun Flow<ByteReadChannel>.pes() = map { channel ->
@@ -60,11 +57,7 @@ fun Flow<ByteReadChannel>.pes() = map { channel ->
             null to null
         }
 
-        val data = channel.readRemaining().run {
-            ByteArray(remaining.toInt()).apply { readFully(this) }
-        }
-
-        Result.Success(Pes(streamId, dataAlignmentIndicator, dts, pts, data))
+        Result.Success(Pes(streamId, dataAlignmentIndicator, dts, pts, channel))
     }
     result
 }
