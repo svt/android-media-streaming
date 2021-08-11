@@ -1,13 +1,13 @@
 package se.svt.videoplayer.container.ts.pes
 
+import android.util.Log
+import io.ktor.utils.io.*
+import io.ktor.utils.io.core.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import se.svt.videoplayer.Result
-import se.svt.videoplayer.container.ts.pes_or_psi.Packet
 import java.io.ByteArrayInputStream
 import java.io.DataInputStream
-import java.io.SequenceInputStream
-import java.util.*
 
 sealed class Error {
     object ExpectedStartCodePrefix : Error()
@@ -18,31 +18,29 @@ data class Pes(
     val dataAlignmentIndicator: Boolean,
     val dts90Khz: Long?, // TODO: Can these be Duration?
     val pts90Khz: Long?, // TODO: Can these be Duration?
+    // TODO: ByteReadChannel for streaming
     val data: ByteArray
 )
 
-fun Flow<Packet>.pes() = map {
-    val dataInputStream =
-        DataInputStream(SequenceInputStream(Collections.enumeration(it.data.map(::ByteArrayInputStream))))
-
-    val startCode = dataInputStream.readInt()
+fun Flow<ByteReadChannel>.pes() = map { channel ->
+    val startCode = channel.readInt()
     val result: Result<Pes, Error> = if (((startCode shr 8)) != 1) {
         Result.Error(Error.ExpectedStartCodePrefix)
     } else {
         val streamId = startCode and 0xFF
-        val length = dataInputStream.readUnsignedShort()
-        val flags = dataInputStream.readUnsignedShort()
+        val length = channel.readShort().toUShort()
+        val flags = channel.readShort().toUShort()
 
-        val dataAlignmentIndicator = (flags and 0x400) != 0
-        val ptsFlag = (flags and 0x80) != 0
-        val dtsFlag = (flags and 0x40) != 0
+        val dataAlignmentIndicator = (flags and 0x400.toUShort()) != 0.toUShort()
+        val ptsFlag = (flags and 0x80.toUShort()) != 0.toUShort()
+        val dtsFlag = (flags and 0x40.toUShort()) != 0.toUShort()
 
-        val headerLength = dataInputStream.readUnsignedByte()
+        val headerLength = channel.readByte().toUByte()
 
         val (pts, dts) = if (ptsFlag) {
-            // TODO: Read directly from dataInputStream to avoid this extra allocation
-            val extendedHeader = DataInputStream(ByteArrayInputStream(ByteArray(headerLength).apply {
-                dataInputStream.readFully(this)
+            // TODO: Read directly from channel to avoid this extra allocation and the warnings
+            val extendedHeader = DataInputStream(ByteArrayInputStream(ByteArray(headerLength.toInt()).apply {
+                channel.readFully(this)
             }))
 
             val pts1 = (extendedHeader.readUnsignedByte() and 0xE).toLong() shl 29
@@ -58,13 +56,12 @@ fun Flow<Packet>.pes() = map {
                 dts90Khz
             } else null
         } else {
-            dataInputStream.skipBytes(headerLength)
+            channel.discard(headerLength.toLong())
             null to null
         }
 
-        val available = it.data.sumOf { it.size } - 4 - 2 - 3 - headerLength
-        val data = ByteArray(available).apply {
-            dataInputStream.readFully(this)
+        val data = channel.readRemaining().run {
+            ByteArray(remaining.toInt()).apply { readFully(this) }
         }
 
         Result.Success(Pes(streamId, dataAlignmentIndicator, dts, pts, data))

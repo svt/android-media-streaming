@@ -1,9 +1,9 @@
 package se.svt.videoplayer.container.ts.pes_or_psi
 
+import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import se.svt.videoplayer.container.ts.Pid
 import se.svt.videoplayer.container.ts.Packet as TsPacket
@@ -27,6 +27,7 @@ import se.svt.videoplayer.container.ts.Packet as TsPacket
     DVBSUBS(0x59),
 }*/
 
+// TODO: Remove
 data class Packet(val data: List<ByteArray>)
 
 /**
@@ -40,24 +41,24 @@ fun Flow<TsPacket>.pesOrPsi(pid: Pid) = mapNotNull { packet ->
     packet.takeIf { it.pid == pid }
 }
     .chunked()
-    .map(::Packet)
 
 // TODO: Extract from this file and generalize on T
 // TODO: Handle discontinuity: Scrap all data until next payloadUnitStartIndicator
-// T
-private fun Flow<TsPacket>.chunked() = flow {
-    var accumulator = listOf<ByteArray>()
-    collect { packet ->
-        accumulator = if (packet.payloadUnitStartIndicator) {
-            if (accumulator.isNotEmpty())
-                emit(accumulator)
+private fun Flow<TsPacket>.chunked() = flow<ByteReadChannel> {
+    var accumulator: ByteChannel? = null
 
-            listOf(packet.data)
+    collect { packet ->
+        if (packet.payloadUnitStartIndicator) {
+            accumulator?.close()
+
+            accumulator = ByteChannel().apply {
+                writeFully(packet.data)
+
+                emit(this)
+            }
         } else {
-            accumulator + packet.data
+            accumulator?.writeFully(packet.data)
         }
     }
-
-    if (accumulator.isNotEmpty())
-        emit(accumulator)
+    accumulator?.close()
 }
