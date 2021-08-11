@@ -7,6 +7,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import se.svt.videoplayer.Result
+import se.svt.videoplayer.andThen
 import se.svt.videoplayer.map
 import se.svt.videoplayer.okOrElse
 import java.nio.ByteBuffer
@@ -21,13 +22,15 @@ class VideoInputBufferIndicesChannel(
     private val mediaCodec: MediaCodec,
     private val channel: Channel<Result<Int, Error>>
 ) {
-    suspend fun receive(writeCallback: (ByteBuffer) -> Unit) = channel.receive().map { index ->
+    suspend fun <T> receive(writeCallback: suspend (ByteBuffer) -> T) = channel.receive().andThen { index ->
         mediaCodec.getInputBuffer(index).okOrElse { Error.NullInputBuffer(index) }.map { buffer ->
             var size = 0
             try {
                 val start = buffer.position()
-                writeCallback(buffer)
+                val value = writeCallback(buffer)
                 size = buffer.position() - start
+
+                value
             } finally {
                 mediaCodec.queueInputBuffer(
                     index,
@@ -38,8 +41,6 @@ class VideoInputBufferIndicesChannel(
                 )
             }
         }
-
-        Unit
     }
 }
 
