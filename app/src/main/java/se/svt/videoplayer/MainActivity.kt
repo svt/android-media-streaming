@@ -46,57 +46,6 @@ class MainActivity : AppCompatActivity() {
             expectSuccess = true
         }
 
-        //val byteChannel = ByteChannel()
-        val pesChannel = Channel<ByteArray>(capacity = 1000)
-        val bufferedReceiverChannel = BufferedReceiverChannel(pesChannel)
-
-        CoroutineScope(Dispatchers.IO).launch {
-            (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
-                .asFlow()
-                .flatMapConcat {
-                    Log.e("HTTP", "GET ${it}")
-                    val get: HttpResponse = client.get(it)
-                    Log.e("HTTP", "CHANNEL ${it}")
-                    val channel: ByteReadChannel = get.receive()
-                    Log.e("HTTP", "GOT CHANNEL ${it}")
-                    val tsFlow = tsFlow(channel)
-                        .buffer()
-                        .mapNotNull { it.ok } // TODO: Handle errors
-                        .buffer()
-                    //.shareIn(this, SharingStarted.Lazily)
-
-                    /*tsFlow
-                        .pesOrPsi(PAT_ID)
-                        .psi()
-                        .mapNotNull { it.ok } // TODO: Handle errors
-                        .pat()
-                        .collect {
-                            Log.e("PAT", "${it}")
-                        }*/
-
-                    /*tsFlow.pesOrPsi(Pid(32)) // TODO
-                        .psi()
-                        .mapNotNull { it.ok } // TODO: Handle errors
-                        .pmt()
-                        .collect {
-                            Log.e("PMT", "${it}")
-                        }*/
-
-                    tsFlow.pesOrPsi(Pid(80)) // TODO
-                        .buffer()
-                        .pes()
-                        .buffer()
-                }
-                .mapNotNull { it.ok } // TODO: Handle errors
-                .buffer()
-                .collect { pes ->
-                    Log.e("PES", "${pes.data.size}")
-                    //byteChannel.writeFully(pes.data)
-                    pesChannel.send(pes.data)
-                }
-            Log.e("MainActivity", "I AM DONE COLLECTING!!")
-        }
-
         setContentView(
             ActivityMainBinding.inflate(layoutInflater).apply {
                 surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
@@ -128,11 +77,87 @@ class MainActivity : AppCompatActivity() {
                             0
                         )
 
+                        val pesChannel = Channel<ByteArray>(capacity = 1000)
+                        val bufferIndexChannel = Channel<Int>(capacity = 1000)
+                        val bufferedReceiverChannel = BufferedReceiverChannel(pesChannel)
+
+                        CoroutineScope(Dispatchers.IO).launch {
+                            (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
+                                .asFlow()
+                                .flatMapConcat {
+                                    Log.e("HTTP", "GET ${it}")
+                                    val get: HttpResponse = client.get(it)
+                                    val channel: ByteReadChannel = get.receive()
+                                    val tsFlow = tsFlow(channel)
+                                        .buffer()
+                                        .mapNotNull { it.ok } // TODO: Handle errors
+                                        .buffer()
+                                    //.shareIn(this, SharingStarted.Lazily)
+
+                                    /*tsFlow
+                                        .pesOrPsi(PAT_ID)
+                                        .psi()
+                                        .mapNotNull { it.ok } // TODO: Handle errors
+                                        .pat()
+                                        .collect {
+                                            Log.e("PAT", "${it}")
+                                        }*/
+
+                                    /*tsFlow.pesOrPsi(Pid(32)) // TODO
+                                        .psi()
+                                        .mapNotNull { it.ok } // TODO: Handle errors
+                                        .pmt()
+                                        .collect {
+                                            Log.e("PMT", "${it}")
+                                        }*/
+
+                                    tsFlow.pesOrPsi(Pid(80)) // TODO
+                                        .buffer()
+                                        .pes()
+                                        .buffer()
+                                }
+                                .mapNotNull { it.ok } // TODO: Handle errors
+                                .buffer()
+                                .collect { pes ->
+                                    val index = bufferIndexChannel.receive()
+                                    val inputBuffer1 = mediaCodec.getInputBuffer(index)
+                                    if (inputBuffer1 == null)
+                                        Log.e("MainActivity", "FATAL: buffer $index IS NULL")
+
+                                    inputBuffer1?.let { inputBuffer ->
+                                        if (inputBuffer.remaining() < pes.data.size) {
+                                            Log.e("MainActivity", "FATAL: buffer isn't big enough")
+                                        }
+
+                                        inputBuffer.put(pes.data)
+
+                                        mediaCodec.queueInputBuffer(
+                                            index,
+                                            0,
+                                            pes.data.size,
+                                            0, // TODO
+                                            0
+                                        )
+                                    }
+
+                                    //byteChannel.writeFully(pes.data)
+                                    //pesChannel.send(pes.data)
+                                }
+                            Log.e("MainActivity", "I AM DONE COLLECTING!!")
+                        }
+
                         mediaCodec.setCallback(object : MediaCodec.Callback() {
                             override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                                codec.getInputBuffer(index)?.let { buffer ->
+                                if (bufferIndexChannel.trySend(index).isFailure) {
+                                    Log.e("MainActivity", "FAILED TO SEND BUFFER INDEX!!!")
+                                }
+
+                                /*val inputBuffer = codec.getInputBuffer(index)
+                                inputBuffer?.let { buffer ->
+                                    //Log.e("MainActivity", "ATTEMPTING TO RECEIVE: ${buffer.remaining()}")
                                     val size = bufferedReceiverChannel.receiveAvailableTo(buffer)
                                     //val size = byteChannel.readAvailable(buffer)
+                                    //Log.e("MainActivity", "receiveAvailableTo: $size")
                                     if (size == -1) {
                                         Log.e("MainActivity", "byteChannel closed")
                                     } else {
@@ -144,11 +169,11 @@ class MainActivity : AppCompatActivity() {
                                             index,
                                             0,
                                             size,
-                                            System.nanoTime() / 1000, // TODO
+                                            0, // TODO
                                             0
                                         )
                                     }
-                                }
+                                }*/
                             }
 
                             override fun onOutputBufferAvailable(

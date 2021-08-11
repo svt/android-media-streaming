@@ -107,9 +107,9 @@ fun tsFlow(channel: ByteReadChannel) : Flow<Result<Packet, Error>> {
                             */Result.Success(Packet(byteArray, pid, payloadUnitStartIndicator, discontinuityFlag))
                     }
 
-                    Log.e("TS", "EMITTING")
+                    //Log.e("TS", "EMITTING")
                     emit(result)
-                    Log.e("TS", "EMITTED")
+                    //Log.e("TS", "EMITTED")
                     //}
                 } else {
                     Log.e("SKIPPPP", "SKIPPING ${repeatedContinuityCounter} $transportError")
@@ -117,7 +117,6 @@ fun tsFlow(channel: ByteReadChannel) : Flow<Result<Packet, Error>> {
             }
         } catch (e: ClosedReceiveChannelException) {
             // Just terminate the flow
-            Log.e("TSDONE", "TSDONEEEE")
         } catch (e: IOException) {
             Log.e("IOEXCEPTION", "TS ${e}")
             emit(Result.Error<Packet, Error>(Error.IO(e)))
