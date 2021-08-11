@@ -1,10 +1,7 @@
 package se.svt.videoplayer
 
 import android.media.MediaCodec
-import android.media.MediaExtractor
 import android.media.MediaFormat
-import android.media.MediaSync
-import android.media.PlaybackParams
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -50,35 +47,12 @@ class MainActivity : AppCompatActivity() {
             ActivityMainBinding.inflate(layoutInflater).apply {
                 surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) {
-                        val initialSurface = holder.surface
-
-                        /*val mediaSync = MediaSync().apply {
-                            playbackParams = PlaybackParams().setSpeed(0.0f)
-                            setSurface(initialSurface)
-                        }*/
-
-                        val surface = initialSurface//mediaSync.createInputSurface()
-
-                        val mediaExtractor = MediaExtractor().apply {
-                            setDataSource("https://storage.googleapis.com/wvmedia/clear/h264/tears/tears_h264_baseline_240p_800.mp4") // TODO // TODO: Warning: This is a blocking call?
-                            //setDataSource("https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-ts-avc.m3u8") // TODO // TODO: Warning: This is a blocking call?
-                            //setDataSource("https://storage.googleapis.com/wvmedia/clear/h264/tears/tears.mpd") // TODO // TODO: Warning: This is a blocking call?
-                        }
-
                         val bufferIndexChannel = Channel<Int>(capacity = 1000)
 
-                        val mediaCodec = MediaCodec.createByCodecName("OMX.android.goldfish.h264.decoder")
+                        //val codecName = "OMX.android.goldfish.h264.decoder"
+                        val codecName = "c2.qti.avc.decoder"
+                        val mediaCodec = MediaCodec.createByCodecName(codecName)
                             .apply {
-                                configure(
-                                    MediaFormat().apply {
-                                        setString("mime", "video/avc")
-                                        setInteger("width", 1280)
-                                        setInteger("height", 720)
-                                    },
-                                    surface,
-                                    null,
-                                    0
-                                )
                                 setCallback(object : MediaCodec.Callback() {
                                     override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
                                         if (bufferIndexChannel.trySend(index).isFailure) {
@@ -106,6 +80,16 @@ class MainActivity : AppCompatActivity() {
 
                                     }
                                 })
+                                configure(
+                                    MediaFormat().apply {
+                                        setString("mime", "video/avc")
+                                        setInteger("width", 1280)
+                                        setInteger("height", 720)
+                                    },
+                                    holder.surface,
+                                    null,
+                                    0
+                                )
 
                                 start()
                             }
@@ -148,7 +132,9 @@ class MainActivity : AppCompatActivity() {
                                 .mapNotNull { it.ok } // TODO: Handle errors
                                 .buffer()
                                 .collect { pes ->
+                                    Log.e("MainActivity", "ATTEMPT RECEIVE INDEX")
                                     val index = bufferIndexChannel.receive()
+                                    Log.e("MainActivity", "GOT RECEIVE INDEX")
                                     val inputBuffer1 = mediaCodec.getInputBuffer(index)
                                     if (inputBuffer1 == null)
                                         Log.e("MainActivity", "FATAL: buffer $index IS NULL")
@@ -160,6 +146,7 @@ class MainActivity : AppCompatActivity() {
 
                                         inputBuffer.put(pes.data)
 
+                                        Log.e("MainActivity", "queueing ${pes.data.size}")
                                         mediaCodec.queueInputBuffer(
                                             index,
                                             0,
