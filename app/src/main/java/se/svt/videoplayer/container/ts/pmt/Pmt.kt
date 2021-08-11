@@ -74,103 +74,108 @@ sealed class Stream {
     object Ait : Stream()
 }
 
-fun Flow<Map<TableId, ByteArray>>.pmt() = mapNotNull {
-    it.mapValues { (_, data) ->
+data class Pmt(val pcrPid: Pid, val streams: Map<Pid, Stream?>)
+
+fun Flow<Map<TableId, ByteArray>>.pmt() = mapNotNull { psi ->
+    psi.mapValues { (_, data) ->
         DataInputStream(ByteArrayInputStream(data)).let { dataInputStream ->
-            val pcrPid = dataInputStream.readUnsignedShort() and 0x1FFF
+            val pcrPid = Pid(dataInputStream.readUnsignedShort() and 0x1FFF)
             val programInfoLength = dataInputStream.readUnsignedShort() and 0x3FF
 
             // descriptors
             dataInputStream.skipBytes(programInfoLength)
 
-            sequence {
-                try {
-                    while (true) {
-                        val streamType = dataInputStream.readUnsignedByte()
-                        val elementaryPid = Pid(dataInputStream.readUnsignedShort() and 0x1FFF)
-                        val esInfoLength = dataInputStream.readUnsignedShort() and 0x3FF
+            Pmt(
+                pcrPid,
+                sequence {
+                    try {
+                        while (true) {
+                            val streamType = dataInputStream.readUnsignedByte()
+                            val elementaryPid = Pid(dataInputStream.readUnsignedShort() and 0x1FFF)
+                            val esInfoLength = dataInputStream.readUnsignedShort() and 0x3FF
 
-                        yield(elementaryPid to if (esInfoLength > 0) {
-                            val descriptorTag = dataInputStream.readUnsignedByte()
-                                .let { descriptor ->
-                                    Descriptor.values().find { it.value == descriptor }
-                                }
-                            when (descriptorTag) {
-                                Descriptor.REGISTRATION -> {
-                                    val formatIdentifier =
-                                        dataInputStream.readInt().let { formatIdentifier ->
-                                            FormatIdentifier.values()
-                                                .find { it.value == formatIdentifier }
-                                        }
-                                    when (formatIdentifier) {
-                                        FormatIdentifier.AC3 -> Stream.Ac3
-                                        FormatIdentifier.E_AC3 -> Stream.EAc3
-                                        FormatIdentifier.AC4 -> Stream.Ac4
-                                        FormatIdentifier.HEVC -> Stream.H265
-                                        null -> null
+                            yield(elementaryPid to if (esInfoLength > 0) {
+                                val descriptorTag = dataInputStream.readUnsignedByte()
+                                    .let { descriptor ->
+                                        Descriptor.values().find { it.value == descriptor }
                                     }
-                                }
-                                Descriptor.ISO639_LANG -> {
-                                    Stream.Iso639Lang(String(ByteArray(3).apply {
-                                        dataInputStream.readFully(this)
-                                    }, StandardCharsets.UTF_8).trim())
-                                }
-                                Descriptor.AC3 -> Stream.Ac3
-                                Descriptor.AIT -> Stream.Ait
-                                Descriptor.EAC3 -> Stream.EAc3
-                                Descriptor.DTS -> Stream.Dts
-                                Descriptor.DVB_EXT -> {
-                                    val descriptorTagExt = dataInputStream.readUnsignedByte()
-                                        .let { descriptorExt ->
-                                            DescriptorExt.values()
-                                                .find { it.value == descriptorExt }
+                                when (descriptorTag) {
+                                    Descriptor.REGISTRATION -> {
+                                        val formatIdentifier =
+                                            dataInputStream.readInt().let { formatIdentifier ->
+                                                FormatIdentifier.values()
+                                                    .find { it.value == formatIdentifier }
+                                            }
+                                        when (formatIdentifier) {
+                                            FormatIdentifier.AC3 -> Stream.Ac3
+                                            FormatIdentifier.E_AC3 -> Stream.EAc3
+                                            FormatIdentifier.AC4 -> Stream.Ac4
+                                            FormatIdentifier.HEVC -> Stream.H265
+                                            null -> null
                                         }
-                                    when (descriptorTagExt) {
-                                        DescriptorExt.DVB_EXT_AC4 -> Stream.Ac4
-                                        null -> null
                                     }
-                                }
-                                Descriptor.DVBSUBS -> {
-                                    Stream.DvbSubs((0 until (esInfoLength - 1) / 8).map {
-                                        val language = String(ByteArray(3).apply {
+                                    Descriptor.ISO639_LANG -> {
+                                        Stream.Iso639Lang(String(ByteArray(3).apply {
                                             dataInputStream.readFully(this)
-                                        }, StandardCharsets.UTF_8).trim()
-                                        val type = dataInputStream.readUnsignedByte()
-                                        val initializationData =
-                                            ByteArray(4).apply { dataInputStream.readFully(this) }
-                                        Stream.SubtitleInfo(language, type, initializationData)
-                                    })
+                                        }, StandardCharsets.UTF_8).trim())
+                                    }
+                                    Descriptor.AC3 -> Stream.Ac3
+                                    Descriptor.AIT -> Stream.Ait
+                                    Descriptor.EAC3 -> Stream.EAc3
+                                    Descriptor.DTS -> Stream.Dts
+                                    Descriptor.DVB_EXT -> {
+                                        val descriptorTagExt = dataInputStream.readUnsignedByte()
+                                            .let { descriptorExt ->
+                                                DescriptorExt.values()
+                                                    .find { it.value == descriptorExt }
+                                            }
+                                        when (descriptorTagExt) {
+                                            DescriptorExt.DVB_EXT_AC4 -> Stream.Ac4
+                                            null -> null
+                                        }
+                                    }
+                                    Descriptor.DVBSUBS -> {
+                                        Stream.DvbSubs((0 until (esInfoLength - 1) / 8).map {
+                                            val language = String(ByteArray(3).apply {
+                                                dataInputStream.readFully(this)
+                                            }, StandardCharsets.UTF_8).trim()
+                                            val type = dataInputStream.readUnsignedByte()
+                                            val initializationData =
+                                                ByteArray(4).apply { dataInputStream.readFully(this) }
+                                            Stream.SubtitleInfo(language, type, initializationData)
+                                        })
+                                    }
+                                    null -> {
+                                        dataInputStream.skipBytes(esInfoLength - 1)
+                                        null
+                                    }
                                 }
-                                null -> {
-                                    dataInputStream.skipBytes(esInfoLength - 1)
-                                    null
+                            } else {
+                                when (Type.values().find { it.value == streamType }) {
+                                    Type.MPA -> Stream.Mpa
+                                    Type.MPA_LSF -> Stream.MpaLsf
+                                    Type.AAC_ADTS -> Stream.AacAdts
+                                    Type.AAC_LATM -> Stream.AacLatm
+                                    Type.AC3 -> Stream.Ac3
+                                    Type.DTS -> Stream.Dts
+                                    Type.HDMV_DTS -> Stream.HdmvDts
+                                    Type.E_AC3 -> Stream.EAc3
+                                    Type.AC4 -> Stream.Ac4
+                                    Type.H262 -> Stream.H262
+                                    Type.H263 -> Stream.H263
+                                    Type.H264 -> Stream.H264
+                                    Type.H265 -> Stream.H265
+                                    Type.ID3 -> Stream.Id3
+                                    Type.SPLICE_INFO -> Stream.SpliceInfo
+                                    Type.DVBSUBS -> Stream.DvbSubs(listOf())
+                                    null -> null
                                 }
-                            }
-                        } else {
-                            when (Type.values().find { it.value == streamType }) {
-                                Type.MPA -> Stream.Mpa
-                                Type.MPA_LSF -> Stream.MpaLsf
-                                Type.AAC_ADTS -> Stream.AacAdts
-                                Type.AAC_LATM -> Stream.AacLatm
-                                Type.AC3 -> Stream.Ac3
-                                Type.DTS -> Stream.Dts
-                                Type.HDMV_DTS -> Stream.HdmvDts
-                                Type.E_AC3 -> Stream.EAc3
-                                Type.AC4 -> Stream.Ac4
-                                Type.H262 -> Stream.H262
-                                Type.H263 -> Stream.H263
-                                Type.H264 -> Stream.H264
-                                Type.H265 -> Stream.H265
-                                Type.ID3 -> Stream.Id3
-                                Type.SPLICE_INFO -> Stream.SpliceInfo
-                                Type.DVBSUBS -> Stream.DvbSubs(listOf())
-                                null -> null
-                            }
-                        })
-                    }
-                } catch (e: EOFException) {}
-            }
-                .toList()
+                            })
+                        }
+                    } catch (e: EOFException) {}
+                }
+                    .toMap()
+            )
         }
     }
 }

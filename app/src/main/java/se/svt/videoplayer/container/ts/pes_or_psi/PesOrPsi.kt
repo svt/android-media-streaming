@@ -1,12 +1,10 @@
 package se.svt.videoplayer.container.ts.pes_or_psi
 
-import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.coroutines.flow.scan
 import se.svt.videoplayer.container.ts.Pid
 import se.svt.videoplayer.container.ts.Packet as TsPacket
 
