@@ -7,14 +7,45 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import se.svt.videoplayer.Result
+import se.svt.videoplayer.map
+import se.svt.videoplayer.okOr
+import se.svt.videoplayer.okOrElse
+import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 
 sealed class Error {
     data class CodecException(val exception: MediaCodec.CodecException) : Error()
+    data class NullInputBuffer(val index: Int) : Error()
+}
+
+class VideoInputBufferIndicesChannel(
+    private val mediaCodec: MediaCodec,
+    private val channel: Channel<Result<Int, Error>>
+) {
+    suspend fun receive(writeCallback: (ByteBuffer) -> Unit) = channel.receive().map { index ->
+        mediaCodec.getInputBuffer(index).okOrElse { Error.NullInputBuffer(index) }.map { buffer ->
+            var size = 0
+            try {
+                val start = buffer.position()
+                writeCallback(buffer)
+                size = buffer.position() - start
+            } finally {
+                mediaCodec.queueInputBuffer(
+                    index,
+                    0,
+                    size,
+                    0, // TODO
+                    0
+                )
+            }
+        }
+
+        Unit
+    }
 }
 
 @ExperimentalCoroutinesApi
-fun MediaCodec.videoInputBufferIndicesChannel() = Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
+fun MediaCodec.videoInputBufferIndicesChannel() = VideoInputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
     setCallback(object : MediaCodec.Callback() {
         override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
             val result = trySend(Result.Success(index))
@@ -38,4 +69,4 @@ fun MediaCodec.videoInputBufferIndicesChannel() = Channel<Result<Int, Error>>(ca
             Log.e(MediaCodec::class.java.simpleName, "onOutputFormatChanged: $format")
         }
     })
-}
+})

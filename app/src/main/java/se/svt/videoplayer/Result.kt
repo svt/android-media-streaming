@@ -52,3 +52,8 @@ fun <T, E : Exception> Result<T, E>.orThrow() = when (this) {
  * Converts a `T?` to a `Result<T, E>` where `E` is given as an argument.
  */
 fun <T, E> T?.okOr(error: E) = if (this != null) Result.Success<T, E>(this) else Result.Error(error)
+
+/**
+ * Converts a `T?` to a `Result<T, E>` where `E` is provided by the closure.
+ */
+fun <T, E> T?.okOrElse(errorClosure: () -> E) = if (this != null) Result.Success<T, E>(this) else Result.Error(errorClosure())

@@ -106,38 +106,8 @@ class MainActivity : AppCompatActivity() {
                                 .mapNotNull { it.ok } // TODO: Handle errors
                                 .buffer()
                                 .collect { pes ->
-                                    Log.e("MainActivity", "ATTEMPT RECEIVE INDEX")
-                                    bufferIndexChannel.receive().map { index ->
-                                        Log.e("MainActivity", "GOT RECEIVE INDEX")
-                                        val inputBuffer1 = try {
-                                            mediaCodec.getInputBuffer(index)
-                                        } catch (e: MediaCodec.CodecException) {
-                                            Log.e("MainActivity", "getInputBuffer", e)
-                                            throw e
-                                        }
-                                        if (inputBuffer1 == null)
-                                            Log.e("MainActivity", "FATAL: buffer $index IS NULL")
-
-                                        inputBuffer1?.let { inputBuffer ->
-                                            if (inputBuffer.remaining() < pes.data.size) {
-                                                Log.e("MainActivity", "FATAL: buffer isn't big enough")
-                                            }
-
-                                            inputBuffer.put(pes.data)
-
-                                            Log.e("MainActivity", "queueing ${pes.data.size}")
-                                            try {
-                                                mediaCodec.queueInputBuffer(
-                                                    index,
-                                                    0,
-                                                    pes.data.size,
-                                                    0, // TODO
-                                                    0
-                                                )
-                                            } catch (e: MediaCodec.CodecException) {
-                                                Log.e("MainActivity", "queueInputBuffer", e)
-                                            }
-                                        }
+                                    bufferIndexChannel.receive { inputBuffer ->
+                                        inputBuffer.put(pes.data)
                                     }
                                         .mapErr {
                                             Log.e("MainActivity", "buffer index: $it")
