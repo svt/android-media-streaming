@@ -16,7 +16,6 @@ import io.ktor.client.statement.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
@@ -31,7 +30,6 @@ import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
 import java.nio.ByteBuffer
-import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
 
@@ -115,90 +113,6 @@ class MainActivity : AppCompatActivity() {
                                 }
                             Log.e("MainActivity", "I AM DONE COLLECTING!!")
                         }
-
-
-                        /*(0 until mediaExtractor.trackCount).map {
-                            val format = mediaExtractor.getTrackFormat(it)
-                            val mime = format.getString(MediaFormat.KEY_MIME)
-                            // TODO: Is a track both audio and video? If we have two codecs but one extractor, how does that work??
-                            val weAreInterestedInThisTrack = true
-                            if (weAreInterestedInThisTrack) {
-                                mediaExtractor.selectTrack(it)
-
-                                val mediaCodec =
-                                    MediaCodecList(MediaCodecList.ALL_CODECS).findDecoderForFormat(format)
-                                        ?.let { codecName ->
-                                            MediaCodec.createByCodecName(codecName)
-                                        } ?: mime?.let(MediaCodec::createDecoderByType) // TODO: createDecoderByType may throw IllegalArgumentException
-
-                                // TODO: Don't parse mime
-                                val isAudio = mime?.contains("audio") == true
-                                if (mime?.contains("video") == true) {
-                                    mediaCodec?.configure(format, surface, null, 0)
-                                } else {
-                                    if (isAudio) {
-                                        mediaCodec?.configure(format, null, null, 0)
-                                    }
-                                }
-
-                                mediaCodec?.setCallback(object : MediaCodec.Callback() {
-                                    override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                                        codec.getInputBuffer(index)?.let { buffer ->
-                                            val size = mediaExtractor.readSampleData(buffer, 0)
-                                            // TODO: If size is negative, no data is currently available, but will onInputBufferAvailable be called again? I.e. we should trigger a callback
-                                            if (size > 0) {
-                                                Log.e(
-                                                    MainActivity::class.java.simpleName,
-                                                    "index: $index size: $size: sampleTime: ${mediaExtractor.sampleTime}"
-                                                )
-                                                codec.queueInputBuffer(
-                                                    index,
-                                                    0,
-                                                    size,
-                                                    mediaExtractor.sampleTime,
-                                                    0
-                                                )
-
-                                                mediaExtractor.advance()
-                                            }
-                                        }
-                                    }
-
-                                    override fun onOutputBufferAvailable(
-                                        codec: MediaCodec,
-                                        index: Int,
-                                        info: MediaCodec.BufferInfo
-                                    ) {
-                                        if (isAudio) {
-                                            codec.getOutputBuffer(index)?.let { buffer ->
-                                                mediaSync.queueAudio(buffer, index, info.presentationTimeUs)
-                                            }
-                                            // TODO: No release?
-                                        } else {
-                                            mediaCodec.releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
-                                        }
-                                    }
-
-                                    override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-                                        TODO("Not yet implemented")
-                                    }
-
-                                    override fun onOutputFormatChanged(
-                                        codec: MediaCodec,
-                                        format: MediaFormat
-                                    ) {
-                                        Log.e(MainActivity::class.java.simpleName, "onOutputFormatChanged $format")
-
-                                    }
-                                })
-
-                                mediaCodec?.start()
-
-
-                            }
-                        }*/
-
-                        //mediaSync.playbackParams = PlaybackParams().setSpeed(1.0f)
                     }
 
                     override fun surfaceChanged(
@@ -216,48 +130,5 @@ class MainActivity : AppCompatActivity() {
                 })
             }.root
         )
-    }
-}
-
-private class BufferedReceiverChannel(val receiverChannel: ReceiveChannel<ByteArray>) {
-    private var current: Pair<ByteArray, Int>? = null
-
-    fun receiveAvailableTo(buffer: ByteBuffer): Int {
-        var written = 0
-
-        while (buffer.remaining() > 0) {
-            current?.let { (byteArray, offset) ->
-                val length = min(buffer.remaining(), byteArray.size - offset)
-                //Log.e("WRITE", "writing $length")
-                buffer.put(byteArray, offset, length)
-                written += length
-                val fullyConsumed = length == byteArray.size - offset
-                current = if (fullyConsumed)
-                    null
-                else
-                    byteArray to offset + length
-            }
-
-            if (buffer.remaining() > 0) {
-                val tryReceive = receiverChannel.tryReceive()
-                if (tryReceive.isClosed)
-                    return -1
-                val byteArray = tryReceive.getOrNull()
-                if (byteArray != null) {
-                    val length = min(buffer.remaining(), byteArray.size)
-                    //Log.e("WRITE1", "writing $length, remaining: ${buffer.remaining()}")
-                    buffer.put(byteArray, 0, length)
-                    written += length
-
-                    if (byteArray.size > length)
-                        current = byteArray to length
-                } else {
-                    break
-                }
-            }
-        }
-
-        //Log.e("WRITTEN", "$written")
-        return written
     }
 }
