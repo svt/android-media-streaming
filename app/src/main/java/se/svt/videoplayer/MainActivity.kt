@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,12 +72,17 @@ class MainActivity : AppCompatActivity() {
                             }
 
                             withContext(Dispatchers.IO) {
-                                (1 until 43).map { "https://ed9.cdn.svt.se/d0/world/20210720/2c082525-031a-4e16-987a-3c47b699fc68/hls-video-avc-1280x720p50-2073/hls-video-avc-1280x720p50-2073-${it}.ts" }
+                                // https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310/hls-video-avc-960x540p25-1310.m3u8
+                                (1 until 930).map { "https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310/hls-video-avc-960x540p25-1310-${it}.ts" }
                                     .asFlow()
-                                    .flatMapConcat {
+                                    .map {
                                         Log.e(MainActivity::class.java.simpleName, "Fetch ${it}")
                                         val get: HttpResponse = client.get(it)
                                         val channel: ByteReadChannel = get.receive()
+                                        channel
+                                    }
+                                    .buffer()
+                                    .flatMapConcat { channel ->
                                         val tsFlow = tsFlow(channel)
                                             .buffer()
                                             .mapNotNull { it.ok } // TODO: Handle errors
