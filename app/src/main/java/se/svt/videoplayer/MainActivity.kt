@@ -72,6 +72,8 @@ class MainActivity : AppCompatActivity() {
                             }
 
                             withContext(Dispatchers.IO) {
+                                // ewAdr96
+                                // https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-ts-full.m3u8?alt=https%3A%2F%2Fswitcher.cdn.svt.se%2F5a3fd48e-c39a-4e43-959f-39c41e79ac43%2Fhls-ts-full.m3u8
                                 // https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310/hls-video-avc-960x540p25-1310.m3u8
                                 (1 until 930).map { "https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310/hls-video-avc-960x540p25-1310-${it}.ts" }
                                     .asFlow()
