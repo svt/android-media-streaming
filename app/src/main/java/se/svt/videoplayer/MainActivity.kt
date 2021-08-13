@@ -2,6 +2,7 @@ package se.svt.videoplayer
 
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -30,6 +31,7 @@ import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
+import se.svt.videoplayer.playlist.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
 
 
@@ -72,14 +74,25 @@ class MainActivity : AppCompatActivity() {
                             }
 
                             withContext(Dispatchers.IO) {
-                                // ewAdr96
+                                // api.svt.se/video/ewAdr96
                                 // https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-ts-full.m3u8?alt=https%3A%2F%2Fswitcher.cdn.svt.se%2F5a3fd48e-c39a-4e43-959f-39c41e79ac43%2Fhls-ts-full.m3u8
                                 // https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310/hls-video-avc-960x540p25-1310.m3u8
-                                (1 until 930).map { "https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310/hls-video-avc-960x540p25-1310-${it}.ts" }
+
+                                val basePath =
+                                    Uri.parse("https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310")
+                                val urlString =
+                                    Uri.parse("$basePath/hls-video-avc-960x540p25-1310.m3u8")
+
+                                val playlist = client
+                                    .get<HttpResponse>(urlString.toString())
+                                    .receive<ByteReadChannel>()
+                                    .parseMediaPlaylistM3u(basePath)
+
+                                playlist.ok!!.entries.map { it.uri }
                                     .asFlow()
                                     .map {
                                         Log.e(MainActivity::class.java.simpleName, "Fetch ${it}")
-                                        val get: HttpResponse = client.get(it)
+                                        val get: HttpResponse = client.get(it.toString())
                                         val channel: ByteReadChannel = get.receive()
                                         channel
                                     }
@@ -128,7 +141,10 @@ class MainActivity : AppCompatActivity() {
                                                 })
                                         }
                                             .mapErr {
-                                                Log.e(MainActivity::class.java.simpleName, "buffer index: $it")
+                                                Log.e(
+                                                    MainActivity::class.java.simpleName,
+                                                    "buffer index: $it"
+                                                )
                                             }
                                     }
                                 Log.e(MainActivity::class.java.simpleName, "Stream ended")
