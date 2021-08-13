@@ -126,8 +126,9 @@ class MainActivity : AppCompatActivity() {
                                                 Log.e("PMT", "${it}")
                                             }*/
 
-                                        tsFlow.pesOrPsi(Pid(80)) // TODO
+                                        tsFlow.pesOrPsi()
                                             .buffer()
+                                            .mapNotNull { (pid, pes) -> if (pid == Pid(80)) pes else null }  // TODO
                                             .pes()
                                             .buffer()
                                     }

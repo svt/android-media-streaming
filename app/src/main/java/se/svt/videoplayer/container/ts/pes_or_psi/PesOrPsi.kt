@@ -4,7 +4,6 @@ import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.mapNotNull
 import se.svt.videoplayer.container.ts.Pid
 import se.svt.videoplayer.container.ts.Packet as TsPacket
 
@@ -31,34 +30,24 @@ import se.svt.videoplayer.container.ts.Packet as TsPacket
 data class Packet(val data: List<ByteArray>)
 
 /**
- * Picks out the `PES` packages of type [pid] out of the ts [Flow] and concatenates them
- * so that the returned [Packet] contains a full `PES` packet potentially spanning multiple
- * ts packets.
- *
- * If you want to filter out several types of [pid] package types, use a `SharedFlow`.
+ * Concatenates the TS packages so that each PES package can be read continuously.
  */
-fun Flow<TsPacket>.pesOrPsi(pid: Pid) = mapNotNull { packet ->
-    packet.takeIf { it.pid == pid }
-}
-    .chunked()
-
-// TODO: Extract from this file and generalize on T
-// TODO: Handle discontinuity: Scrap all data until next payloadUnitStartIndicator
-private fun Flow<TsPacket>.chunked() = flow<ByteReadChannel> {
-    var accumulator: ByteChannel? = null
+fun Flow<TsPacket>.pesOrPsi() = flow {
+    val accumulators = mutableMapOf<Pid, ByteChannel>()
 
     collect { packet ->
         if (packet.payloadUnitStartIndicator) {
-            accumulator?.close()
+            accumulators.remove(packet.pid)?.close()
 
-            accumulator = ByteChannel().apply {
+            accumulators[packet.pid] = ByteChannel().apply {
                 writeFully(packet.data)
 
-                emit(this)
+                emit(packet.pid to this)
             }
         } else {
-            accumulator?.writeFully(packet.data)
+            accumulators[packet.pid]?.writeFully(packet.data)
         }
     }
-    accumulator?.close()
+
+    accumulators.values.forEach(ByteChannel::close)
 }
