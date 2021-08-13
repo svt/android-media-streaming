@@ -26,9 +26,6 @@ import se.svt.videoplayer.container.ts.Packet as TsPacket
     DVBSUBS(0x59),
 }*/
 
-// TODO: Remove
-data class Packet(val data: List<ByteArray>)
-
 /**
  * Concatenates the TS packages so that each PES package can be read continuously.
  */

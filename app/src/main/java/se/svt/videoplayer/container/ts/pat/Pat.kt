@@ -6,8 +6,6 @@ import java.io.ByteArrayInputStream
 import java.io.DataInputStream
 import java.io.EOFException
 
-const val PAT_ID = 0
-
 fun Flow<Map<Int, ByteArray>>.pat() = mapNotNull { it[0]?.let { data ->
     DataInputStream(ByteArrayInputStream(data)).let { dataInputStream ->
         sequence {

@@ -29,6 +29,7 @@ import kotlinx.coroutines.withContext
 import se.svt.videoplayer.container.ts.Pid
 import se.svt.videoplayer.container.ts.pes.pes
 import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
+import se.svt.videoplayer.container.ts.psi.psi
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.format.Format
@@ -128,8 +129,9 @@ class MainActivity : AppCompatActivity() {
 
                                         tsFlow.pesOrPsi()
                                             .buffer()
-                                            .mapNotNull { (pid, pes) -> if (pid == Pid(80)) pes else null }  // TODO
-                                            .pes()
+                                            .mapNotNull { (pid, byteChannel) ->
+                                                if (pid == Pid(80)) byteChannel.pes() else null
+                                            }
                                             .buffer()
                                     }
                                     .mapNotNull { it.ok } // TODO: Handle errors
