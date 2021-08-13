@@ -8,7 +8,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import se.svt.videoplayer.Result
 import se.svt.videoplayer.andThen
-import se.svt.videoplayer.map
 import se.svt.videoplayer.okOrElse
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
@@ -23,23 +22,28 @@ class VideoInputBufferIndicesChannel(
     private val channel: Channel<Result<Int, Error>>
 ) {
     suspend fun <T> receive(writeCallback: suspend (ByteBuffer) -> T) = channel.receive().andThen { index ->
-        mediaCodec.getInputBuffer(index).okOrElse { Error.NullInputBuffer(index) }.map { buffer ->
-            var size = 0
-            try {
-                val start = buffer.position()
-                val value = writeCallback(buffer)
-                size = buffer.position() - start
+        try {
+            mediaCodec.getInputBuffer(index).okOrElse { Error.NullInputBuffer(index) }
+                .andThen { buffer ->
+                    var size = 0
+                    try {
+                        val start = buffer.position()
+                        val value = writeCallback(buffer)
+                        size = buffer.position() - start
 
-                value
-            } finally {
-                mediaCodec.queueInputBuffer(
-                    index,
-                    0,
-                    size,
-                    0, // TODO
-                    0
-                )
-            }
+                        Result.Success(value)
+                    } finally {
+                        mediaCodec.queueInputBuffer(
+                            index,
+                            0,
+                            size,
+                            0, // TODO
+                            0
+                        )
+                    }
+                }
+        } catch (e: MediaCodec.CodecException) {
+            Result.Error(Error.CodecException(e))
         }
     }
 }
