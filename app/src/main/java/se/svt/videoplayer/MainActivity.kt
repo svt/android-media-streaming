@@ -1,6 +1,7 @@
 package se.svt.videoplayer
 
 import android.media.MediaCodec
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.net.Uri
 import android.os.Build
@@ -30,6 +31,8 @@ import se.svt.videoplayer.container.ts.pes.pes
 import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
+import se.svt.videoplayer.format.Format
+import se.svt.videoplayer.mediacodec.codecFromFormat
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
 import se.svt.videoplayer.playlist.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
@@ -44,6 +47,8 @@ class MainActivity : AppCompatActivity() {
             expectSuccess = true
         }
 
+        val codecInfos = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+
         setContentView(
             ActivityMainBinding.inflate(layoutInflater).apply {
 
@@ -55,8 +60,8 @@ class MainActivity : AppCompatActivity() {
                             // TODO: Note that we need to recreate the codec though
 
                             //val codecName = "OMX.android.goldfish.h264.decoder"
-                            val codecName = "c2.qti.avc.decoder"
-                            val mediaCodec = MediaCodec.createByCodecName(codecName)
+                            //val codecName = "c2.qti.avc.decoder"
+                            val mediaCodec = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.H264)?.name!!)
                             val bufferIndexChannel = mediaCodec.videoInputBufferIndicesChannel()
                             mediaCodec.apply {
                                 configure(

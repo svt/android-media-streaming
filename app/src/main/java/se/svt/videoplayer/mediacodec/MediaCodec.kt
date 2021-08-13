@@ -1,6 +1,7 @@
 package se.svt.videoplayer.mediacodec
 
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.util.Log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -8,6 +9,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import se.svt.videoplayer.Result
 import se.svt.videoplayer.andThen
+import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.okOrElse
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
@@ -74,3 +76,8 @@ fun MediaCodec.videoInputBufferIndicesChannel() = VideoInputBufferIndicesChannel
         }
     })
 })
+
+// TODO: There are duplicates for formats that expose other flags like secure surfaces and stuff.
+fun codecFromFormat(codecInfos: Array<MediaCodecInfo>, format: Format) = codecInfos.find {
+    it.supportedTypes.contains(format.mimeType)
+}
