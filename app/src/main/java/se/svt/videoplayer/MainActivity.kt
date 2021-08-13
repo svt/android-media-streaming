@@ -18,13 +18,13 @@ import io.ktor.client.statement.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import se.svt.videoplayer.container.ts.Pid
@@ -41,7 +41,7 @@ import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
 
 // TODO: Move
 sealed class PatOrPacket {
-    data class Pat(val pat: Flow<Pair<UShort, Pid>>) : PatOrPacket()
+    data class Pat(val pat: Map<UShort, Pid>) : PatOrPacket()
     data class Packet(val pid: Pid, val byteReadChannel: ByteReadChannel) : PatOrPacket()
 }
 
@@ -137,7 +137,7 @@ class MainActivity : AppCompatActivity() {
                                             .buffer()
                                             .map { (pid, byteChannel) ->
                                                 if (pid == Pid.PAT)
-                                                    PatOrPacket.Pat(byteChannel.pat())
+                                                    PatOrPacket.Pat(byteChannel.pat().toList().toMap())
                                                 else
                                                     PatOrPacket.Packet(pid, byteChannel)
                                             }
