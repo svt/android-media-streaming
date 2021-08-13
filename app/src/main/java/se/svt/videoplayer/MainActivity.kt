@@ -18,6 +18,7 @@ import io.ktor.client.statement.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
@@ -27,9 +28,9 @@ import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import se.svt.videoplayer.container.ts.Pid
+import se.svt.videoplayer.container.ts.pat.pat
 import se.svt.videoplayer.container.ts.pes.pes
 import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
-import se.svt.videoplayer.container.ts.psi.psi
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.format.Format
@@ -38,6 +39,11 @@ import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
 import se.svt.videoplayer.playlist.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
 
+// TODO: Move
+sealed class PatOrPacket {
+    data class Pat(val pat: Flow<Pair<UShort, Pid>>) : PatOrPacket()
+    data class Packet(val pid: Pid, val byteReadChannel: ByteReadChannel) : PatOrPacket()
+}
 
 class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.M)
@@ -129,8 +135,16 @@ class MainActivity : AppCompatActivity() {
 
                                         tsFlow.pesOrPsi()
                                             .buffer()
-                                            .mapNotNull { (pid, byteChannel) ->
-                                                if (pid == Pid(80)) byteChannel.pes() else null
+                                            .map { (pid, byteChannel) ->
+                                                if (pid == Pid.PAT)
+                                                    PatOrPacket.Pat(byteChannel.pat())
+                                                else
+                                                    PatOrPacket.Packet(pid, byteChannel)
+                                            }
+                                            .mapNotNull { patOrPacket ->
+                                                if (patOrPacket is PatOrPacket.Packet && patOrPacket.pid == Pid(80))
+                                                    patOrPacket.byteReadChannel.pes()
+                                                else null
                                             }
                                             .buffer()
                                     }

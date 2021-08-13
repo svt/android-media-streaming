@@ -36,11 +36,12 @@ fun Flow<TsPacket>.pesOrPsi() = flow {
         if (packet.payloadUnitStartIndicator) {
             accumulators.remove(packet.pid)?.close()
 
-            accumulators[packet.pid] = ByteChannel().apply {
+            val accumulator = ByteChannel().apply {
                 writeFully(packet.data)
-
-                emit(packet.pid to this)
             }
+            accumulators[packet.pid] = accumulator
+
+            emit(packet.pid to accumulator)
         } else {
             accumulators[packet.pid]?.writeFully(packet.data)
         }
