@@ -1,11 +1,11 @@
-package se.svt.videoplayer.playlist.m3u.media
+package se.svt.videoplayer.streaming.hls.m3u.media
 
 import android.net.Uri
 import io.ktor.utils.io.*
 import se.svt.videoplayer.Result
-import se.svt.videoplayer.playlist.m3u.BasicTag
-import se.svt.videoplayer.playlist.m3u.durationOfDoubleSeconds
-import se.svt.videoplayer.playlist.m3u.urlRegex
+import se.svt.videoplayer.streaming.hls.m3u.BasicTag
+import se.svt.videoplayer.streaming.hls.m3u.durationOfDoubleSeconds
+import se.svt.videoplayer.streaming.hls.m3u.urlRegex
 import java.time.Duration
 
 

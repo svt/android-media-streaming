@@ -1,4 +1,4 @@
-package se.svt.videoplayer.playlist.m3u
+package se.svt.videoplayer.streaming.hls.m3u
 
 import java.time.Duration
 import java.util.concurrent.TimeUnit

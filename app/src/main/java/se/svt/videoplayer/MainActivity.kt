@@ -32,7 +32,7 @@ import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.mediacodec.codecFromFormat
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
-import se.svt.videoplayer.playlist.m3u.media.parseMediaPlaylistM3u
+import se.svt.videoplayer.streaming.hls.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.streaming.hls.tsAsHls
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
 
