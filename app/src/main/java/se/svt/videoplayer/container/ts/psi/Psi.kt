@@ -1,11 +1,11 @@
 package se.svt.videoplayer.container.ts.psi
 
 import io.ktor.utils.io.*
+import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.flow.flow
 import se.svt.videoplayer.Result
-import java.io.EOFException
 
-sealed class Error {
+sealed class Error : Exception() {
     object ExpectedSectionSyntaxIndicator : Error()
 }
 
@@ -19,6 +19,7 @@ fun ByteReadChannel.psi() = flow<Result<Pair<TableId, ByteArray>, Error>> {
         while (true) {
             val tableId = TableId(readByte().toUByte().toInt())
             val flags = readShort().toUShort()
+
             emit(if ((flags and 0xC000.toUShort()) != 0x8000.toUShort())
                 Result.Error(Error.ExpectedSectionSyntaxIndicator)
             else {
@@ -36,6 +37,6 @@ fun ByteReadChannel.psi() = flow<Result<Pair<TableId, ByteArray>, Error>> {
                 Result.Success(tableId to bytes)
             })
         }
-    } catch (e: EOFException) {
+    } catch (e: ClosedReceiveChannelException) {
     }
 }

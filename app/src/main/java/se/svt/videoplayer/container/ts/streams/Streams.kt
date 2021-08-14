@@ -1,4 +1,4 @@
-package se.svt.videoplayer.container.ts.pes_or_psi
+package se.svt.videoplayer.container.ts.streams
 
 import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
@@ -27,16 +27,19 @@ import se.svt.videoplayer.container.ts.Packet as TsPacket
 }*/
 
 /**
- * Concatenates the TS packages so that each PES package can be read continuously.
+ * Concatenates the TS packages so that each PES/PSI stream can be read continuously.
+ *
+ * Be careful when `collect`-ing this Flow. Since each stream is intertwined with other streams,
+ * as `collect` will `suspend` until the stream has been fully read, this can cause a deadlock!
  */
-fun Flow<TsPacket>.pesOrPsi() = flow {
+fun Flow<TsPacket>.streams() = flow {
     val accumulators = mutableMapOf<Pid, ByteChannel>()
 
     collect { packet ->
         if (packet.payloadUnitStartIndicator) {
             accumulators.remove(packet.pid)?.close()
 
-            val accumulator = ByteChannel().apply {
+            val accumulator = ByteChannel(autoFlush = true).apply {
                 writeFully(packet.data)
             }
             accumulators[packet.pid] = accumulator

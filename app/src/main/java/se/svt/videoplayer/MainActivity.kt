@@ -24,26 +24,17 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flatMapConcat
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import se.svt.videoplayer.container.ts.Pid
-import se.svt.videoplayer.container.ts.pat.pat
-import se.svt.videoplayer.container.ts.pes.pes
-import se.svt.videoplayer.container.ts.pes_or_psi.pesOrPsi
+import se.svt.videoplayer.container.ts.streams.streams
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.mediacodec.codecFromFormat
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
 import se.svt.videoplayer.playlist.m3u.media.parseMediaPlaylistM3u
+import se.svt.videoplayer.streaming.hls.tsAsHls
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
-
-// TODO: Move
-sealed class PatOrPacket {
-    data class Pat(val pat: Map<UShort, Pid>) : PatOrPacket()
-    data class Packet(val pid: Pid, val byteReadChannel: ByteReadChannel) : PatOrPacket()
-}
 
 class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.M)
@@ -87,8 +78,6 @@ class MainActivity : AppCompatActivity() {
 
                             withContext(Dispatchers.IO) {
                                 // api.svt.se/video/ewAdr96
-                                // https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-ts-full.m3u8?alt=https%3A%2F%2Fswitcher.cdn.svt.se%2F5a3fd48e-c39a-4e43-959f-39c41e79ac43%2Fhls-ts-full.m3u8
-                                // https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310/hls-video-avc-960x540p25-1310.m3u8
 
                                 val basePath =
                                     Uri.parse("https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310")
@@ -100,52 +89,22 @@ class MainActivity : AppCompatActivity() {
                                     .receive<ByteReadChannel>()
                                     .parseMediaPlaylistM3u(basePath)
 
-                                playlist.ok!!.entries.map { it.uri }
+                                playlist.ok!!.entries.map { it.uri } // TODO: Handle errors
                                     .asFlow()
                                     .map {
-                                        Log.e(MainActivity::class.java.simpleName, "Fetch ${it}")
+                                        Log.e(MainActivity::class.java.simpleName, "Fetch $it")
                                         val get: HttpResponse = client.get(it.toString())
                                         val channel: ByteReadChannel = get.receive()
                                         channel
                                     }
                                     .buffer()
                                     .flatMapConcat { channel ->
-                                        val tsFlow = tsFlow(channel)
+                                        tsFlow(channel)
                                             .buffer()
                                             .mapNotNull { it.ok } // TODO: Handle errors
+                                            .streams()
                                             .buffer()
-                                        //.shareIn(this, SharingStarted.Lazily)
-
-                                        /*tsFlow
-                                            .pesOrPsi(PAT_ID)
-                                            .psi()
-                                            .mapNotNull { it.ok } // TODO: Handle errors
-                                            .pat()
-                                            .collect {
-                                                Log.e("PAT", "${it}")
-                                            }*/
-
-                                        /*tsFlow.pesOrPsi(Pid(32)) // TODO
-                                            .psi()
-                                            .mapNotNull { it.ok } // TODO: Handle errors
-                                            .pmt()
-                                            .collect {
-                                                Log.e("PMT", "${it}")
-                                            }*/
-
-                                        tsFlow.pesOrPsi()
-                                            .buffer()
-                                            .map { (pid, byteChannel) ->
-                                                if (pid == Pid.PAT)
-                                                    PatOrPacket.Pat(byteChannel.pat().toList().toMap())
-                                                else
-                                                    PatOrPacket.Packet(pid, byteChannel)
-                                            }
-                                            .mapNotNull { patOrPacket ->
-                                                if (patOrPacket is PatOrPacket.Packet && patOrPacket.pid == Pid(80))
-                                                    patOrPacket.byteReadChannel.pes()
-                                                else null
-                                            }
+                                            .tsAsHls()
                                             .buffer()
                                     }
                                     .mapNotNull { it.ok } // TODO: Handle errors
@@ -156,9 +115,7 @@ class MainActivity : AppCompatActivity() {
                                                 // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
                                                 pes.byteReadChannel.readRemaining().run {
                                                     ByteArray(remaining.toInt()).apply {
-                                                        readFully(
-                                                            this
-                                                        )
+                                                        readFully(this)
                                                     }
                                                 })
                                         }
