@@ -35,6 +35,12 @@ import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
 import se.svt.videoplayer.streaming.hls.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.streaming.hls.tsAsHls
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
+import java.time.Duration
+
+data class PresentationTime(
+    val pts: Duration,
+    val realTime: Duration,
+)
 
 class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.M)
@@ -46,6 +52,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         val codecInfos = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+
+        var lastPresentationTime: PresentationTime? = null
 
         setContentView(
             ActivityMainBinding.inflate(layoutInflater).apply {
@@ -118,6 +126,27 @@ class MainActivity : AppCompatActivity() {
                                                         readFully(this)
                                                     }
                                                 })
+
+                                            val presentationTime = if (pes.pts != null) {
+                                                val lst = lastPresentationTime
+                                                val presentationTime = if (lst == null) {
+                                                    PresentationTime(
+                                                        pes.pts,
+                                                        Duration.ofNanos(System.nanoTime())
+                                                    )
+                                                } else {
+                                                    PresentationTime(
+                                                        pes.pts,
+                                                        lst.realTime + (pes.pts - lst.pts)
+                                                    )
+                                                }
+                                                lastPresentationTime = presentationTime
+
+                                                presentationTime.realTime
+                                            } else
+                                                Duration.ofNanos(System.nanoTime())
+
+                                            presentationTime
                                         }
                                             .mapErr {
                                                 Log.e(

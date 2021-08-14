@@ -12,6 +12,7 @@ import se.svt.videoplayer.andThen
 import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.okOrElse
 import java.nio.ByteBuffer
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 sealed class Error {
@@ -23,26 +24,23 @@ class VideoInputBufferIndicesChannel(
     private val mediaCodec: MediaCodec,
     private val channel: Channel<Result<Int, Error>>
 ) {
-    suspend fun <T> receive(writeCallback: suspend (ByteBuffer) -> T) = channel.receive().andThen { index ->
+    suspend fun receive(writeCallback: suspend (ByteBuffer) -> Duration) = channel.receive().andThen { index ->
         try {
             mediaCodec.getInputBuffer(index).okOrElse { Error.NullInputBuffer(index) }
                 .andThen { buffer ->
-                    var size = 0
-                    try {
-                        val start = buffer.position()
-                        val value = writeCallback(buffer)
-                        size = buffer.position() - start
+                    val start = buffer.position()
+                    val presentationTime = writeCallback(buffer)
+                    val size = buffer.position() - start
 
-                        Result.Success(value)
-                    } finally {
-                        mediaCodec.queueInputBuffer(
-                            index,
-                            0,
-                            size,
-                            0, // TODO
-                            0
-                        )
-                    }
+                    mediaCodec.queueInputBuffer(
+                        index,
+                        0,
+                        size,
+                        TimeUnit.NANOSECONDS.toMicros(presentationTime.toNanos()), // Why is there no toMicros?
+                        0
+                    )
+
+                    Result.Success(Unit)
                 }
         } catch (e: MediaCodec.CodecException) {
             Result.Error(Error.CodecException(e))
