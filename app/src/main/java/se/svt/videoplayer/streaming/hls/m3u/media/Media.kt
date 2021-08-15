@@ -71,7 +71,7 @@ suspend fun ByteReadChannel.parseMediaPlaylistM3u(baseUri: Uri): Result<Playlist
             else if (!line.startsWith('#')) {
                 val uri = if (urlRegex.matchEntire(line) != null) {
                     Uri.parse(line)
-                } else baseUri.buildUpon().appendPath(line).build()
+                } else baseUri.buildUpon().appendEncodedPath(line).build()
 
                 when {
                     duration == null -> return Result.Error(Error.MissingDuration)

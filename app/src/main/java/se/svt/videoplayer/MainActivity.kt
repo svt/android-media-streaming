@@ -37,6 +37,7 @@ import se.svt.videoplayer.streaming.hls.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.streaming.hls.tsAsHls
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
 import java.time.Duration
+import kotlin.math.absoluteValue
 
 data class PresentationTime(
     val pts: Duration,
@@ -101,12 +102,24 @@ class MainActivity : AppCompatActivity() {
                                         }
                                 Log.e("masterPlaylist", "masterPlaylist: $masterPlaylist")
 
+                                // Pick video by resolution
+                                // TODO: Pick by bandwidth and/or a combination
+                                val entry = masterPlaylist.ok!!.entries.minByOrNull { entry ->
+                                    // TODO: Don't crash
+                                    entry.resolution!!.let { (width, height) ->
+                                        (width - surfaceHolderConfiguration.width).absoluteValue + (height - surfaceHolderConfiguration.height).absoluteValue
+                                    }
+                                }!!
+
+                                val lastPathSegment = entry.uri.lastPathSegment!!
+                                val basePath = lastPathSegment.let { entry.uri.toString().removeSuffix(it) }
+
                                 val mediaPlaylist =
-                                    Uri.parse("https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310")
+                                    Uri.parse(basePath)
                                         .let { basePath ->
                                             client
                                                 .get<HttpResponse>(
-                                                    Uri.parse("$basePath/hls-video-avc-960x540p25-1310.m3u8")
+                                                    Uri.parse("$basePath/$lastPathSegment")
                                                         .toString()
                                                 )
                                                 .receive<ByteReadChannel>()

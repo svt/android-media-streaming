@@ -24,6 +24,7 @@ data class Entry(
     val bandwidth: Int?,
     val averageBandwidth: Int?,
     val codecs: List<String>?,
+    val resolution: Pair<Int, Int>?,
 )
 
 data class Playlist(
@@ -47,7 +48,9 @@ private object PlaylistTag {
     val extXIFrameStreamInfRegex = Regex("""#EXT-X-I-FRAME-STREAM-INF:(.+)$""")
 
     // Matches KEY=VALUE or KEY="some \" \\\"escaped string"
-    val keyValueRegex = Regex("""([A-Z-]+)=(?:([A-Z0-9-]+)|(?:"((?:(?:\\{2})*|(?:.*?[^\\](?:\\{2})*)))"))""")
+    val keyValueRegex = Regex("""([A-Z-]+)=(?:([A-Za-z0-9-]+)|(?:"((?:(?:\\{2})*|(?:.*?[^\\](?:\\{2})*)))"))""")
+
+    val resolutionRegex = Regex("([0-9]+)x([0-9]+)")
 }
 
 private fun keyValues(input: String) = sequence<Result<Pair<String, String>, Error>> {
@@ -82,6 +85,7 @@ suspend fun ByteReadChannel.parseMasterPlaylistM3u(baseUri: Uri): Result<Playlis
         var bandwidth: Int? = null
         var averageBandwidth: Int? = null
         var codecs: List<String>? = null
+        var resolution: Pair<Int, Int>? = null
 
         val alternateRenditions = mutableListOf<AlternateRendition>()
         val entries = mutableListOf<Entry>()
@@ -94,13 +98,14 @@ suspend fun ByteReadChannel.parseMasterPlaylistM3u(baseUri: Uri): Result<Playlis
             else if (!line.startsWith('#')) {
                 val uri = if (urlRegex.matchEntire(line) != null) {
                     Uri.parse(line)
-                } else baseUri.buildUpon().appendPath(line).build()
+                } else baseUri.buildUpon().appendEncodedPath(line).build()
 
                 entries.add(Entry(
                     uri,
                     bandwidth,
                     averageBandwidth,
-                    codecs
+                    codecs,
+                    resolution
                 ))
 
                 bandwidth = null
@@ -144,7 +149,9 @@ suspend fun ByteReadChannel.parseMasterPlaylistM3u(baseUri: Uri): Result<Playlis
                             "BANDWIDTH" -> bandwidth = value.toIntOrNull()
                             "AVERAGE-BANDWIDTH" -> averageBandwidth = value.toIntOrNull()
                             "CODECS" -> codecs = value.split(',')
-
+                            "RESOLUTION" -> resolution = PlaylistTag.resolutionRegex.matchEntire(value)!!.let { matchResult -> // TODO: Error handling
+                                matchResult.groupValues[1].toIntOrNull()!! to matchResult.groupValues[2].toIntOrNull()!! // TODO
+                            }
                         }
                     }
                 }
