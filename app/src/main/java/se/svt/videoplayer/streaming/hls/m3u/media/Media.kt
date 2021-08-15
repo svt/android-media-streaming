@@ -8,7 +8,6 @@ import se.svt.videoplayer.streaming.hls.m3u.durationOfDoubleSeconds
 import se.svt.videoplayer.streaming.hls.m3u.urlRegex
 import java.time.Duration
 
-
 data class Entry(
     val uri: Uri,
     val duration: Duration,
@@ -35,11 +34,11 @@ enum class Type {
     EVENT
 }
 
-private object MediaSegmentTag {
+private object SegmentTag {
     val extInfRegex = Regex("""#EXTINF:([0-9.]+)(?:,(.*$))""")
 }
 
-private object MediaPlaylistTag {
+private object PlaylistTag {
     val extXPlaylistTypeRegex = Regex("""#EXT-X-PLAYLIST-TYPE:((?:EVENT)|(?:VOD))""")
     val extXTargetdurationRegex = Regex("""#EXT-X-TARGETDURATION:([0-9.]+)""")
     val extXMediaSequenceRegex = Regex("""#EXT-X-MEDIA-SEQUENCE:([0-9]+)""")
@@ -47,11 +46,11 @@ private object MediaPlaylistTag {
 
 
 /**
- * This parses an `m3u*` media playlist. To parse an `m3u*` master playlist, use [parseMasterPlaylistM3u].
+ * This parses an `m3u*` media playlist. To parse an `m3u*` master playlist, use `parseMasterPlaylistM3u`.
  * [baseUri] for relative URLs, use this as the base to create a [Uri].
  */
 suspend fun ByteReadChannel.parseMediaPlaylistM3u(baseUri: Uri): Result<Playlist, Error> {
-    return if ("#EXTM3U" != readUTF8Line()) {
+    return if (BasicTag.extM3u != readUTF8Line()) {
         Result.Error(Error.MissingHeader)
     } else {
         var version: Int? = null
@@ -79,6 +78,10 @@ suspend fun ByteReadChannel.parseMediaPlaylistM3u(baseUri: Uri): Result<Playlist
                     title == null -> return Result.Error(Error.MissingTitle)
                     else -> {
                         entries.add(Entry(uri, duration, title, sequence))
+
+                        duration = null
+                        title = null
+
                         sequence += 1
                     }
                 }
@@ -86,12 +89,12 @@ suspend fun ByteReadChannel.parseMediaPlaylistM3u(baseUri: Uri): Result<Playlist
                 version =
                     BasicTag.extXVersionRegex.matchEntire(line)?.groupValues?.get(1)?.toIntOrNull()
                         ?: version
-                MediaSegmentTag.extInfRegex.matchEntire(line)?.groupValues?.let { groupValues ->
+                SegmentTag.extInfRegex.matchEntire(line)?.groupValues?.let { groupValues ->
                     duration = groupValues[1].toDoubleOrNull()?.let(::durationOfDoubleSeconds)
                     title = groupValues[2]
                 }
                 playlistType =
-                    MediaPlaylistTag.extXPlaylistTypeRegex.matchEntire(line)?.groupValues?.get(1)?.let {
+                    PlaylistTag.extXPlaylistTypeRegex.matchEntire(line)?.groupValues?.get(1)?.let {
                         when (it) {
                             "VOD" -> Type.VOD
                             "EVENT" -> Type.EVENT
@@ -99,10 +102,10 @@ suspend fun ByteReadChannel.parseMediaPlaylistM3u(baseUri: Uri): Result<Playlist
                         }
                     } ?: playlistType
                 targetDuration =
-                    MediaPlaylistTag.extXTargetdurationRegex.matchEntire(line)?.groupValues?.get(1)?.toDoubleOrNull()
+                    PlaylistTag.extXTargetdurationRegex.matchEntire(line)?.groupValues?.get(1)?.toDoubleOrNull()
                         ?.let(::durationOfDoubleSeconds) ?: targetDuration
                 sequence =
-                    MediaPlaylistTag.extXMediaSequenceRegex.matchEntire(line)?.groupValues?.get(1)?.toIntOrNull()
+                    PlaylistTag.extXMediaSequenceRegex.matchEntire(line)?.groupValues?.get(1)?.toIntOrNull()
                         ?: sequence
 
             }

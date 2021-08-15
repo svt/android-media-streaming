@@ -32,6 +32,7 @@ import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.mediacodec.codecFromFormat
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
+import se.svt.videoplayer.streaming.hls.m3u.master.parseMasterPlaylistM3u
 import se.svt.videoplayer.streaming.hls.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.streaming.hls.tsAsHls
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
@@ -87,17 +88,32 @@ class MainActivity : AppCompatActivity() {
                             withContext(Dispatchers.IO) {
                                 // api.svt.se/video/ewAdr96
 
-                                val basePath =
+                                val masterPlaylist =
+                                    Uri.parse("https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43")
+                                        .let { basePath ->
+                                            client
+                                                .get<HttpResponse>(
+                                                    Uri.parse("$basePath/hls-ts-full.m3u8?alt=https%3A%2F%2Fswitcher.cdn.svt.se%2F5a3fd48e-c39a-4e43-959f-39c41e79ac43%2Fhls-ts-full.m3u8")
+                                                        .toString()
+                                                )
+                                                .receive<ByteReadChannel>()
+                                                .parseMasterPlaylistM3u(basePath)
+                                        }
+                                Log.e("masterPlaylist", "masterPlaylist: $masterPlaylist")
+
+                                val mediaPlaylist =
                                     Uri.parse("https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-video-avc-960x540p25-1310")
-                                val urlString =
-                                    Uri.parse("$basePath/hls-video-avc-960x540p25-1310.m3u8")
+                                        .let { basePath ->
+                                            client
+                                                .get<HttpResponse>(
+                                                    Uri.parse("$basePath/hls-video-avc-960x540p25-1310.m3u8")
+                                                        .toString()
+                                                )
+                                                .receive<ByteReadChannel>()
+                                                .parseMediaPlaylistM3u(basePath)
+                                        }
 
-                                val playlist = client
-                                    .get<HttpResponse>(urlString.toString())
-                                    .receive<ByteReadChannel>()
-                                    .parseMediaPlaylistM3u(basePath)
-
-                                playlist.ok!!.entries.map { it.uri } // TODO: Handle errors
+                                mediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
                                     .asFlow()
                                     .map {
                                         Log.e(MainActivity::class.java.simpleName, "Fetch $it")
