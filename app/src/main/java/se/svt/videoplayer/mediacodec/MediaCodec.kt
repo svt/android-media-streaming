@@ -24,35 +24,7 @@ sealed class Error {
     data class NoCodecForFormat(val format: Format) : Error()
 }
 
-class VideoInputBufferIndicesChannel(
-    private val mediaCodec: MediaCodec,
-    private val channel: Channel<Result<Int, Error>>
-) {
-    suspend fun receive(writeCallback: suspend (ByteBuffer) -> Duration) = channel.receive().andThen { index ->
-        try {
-            mediaCodec.getInputBuffer(index).okOrElse { Error.NullInputBuffer(index) }
-                .andThen { buffer ->
-                    val start = buffer.position()
-                    val presentationTime = writeCallback(buffer)
-                    val size = buffer.position() - start
-
-                    mediaCodec.queueInputBuffer(
-                        index,
-                        0,
-                        size,
-                        TimeUnit.NANOSECONDS.toMicros(presentationTime.toNanos()), // Why is there no toMicros?
-                        0
-                    )
-
-                    Result.Success(Unit)
-                }
-        } catch (e: MediaCodec.CodecException) {
-            Result.Error(Error.CodecException(e))
-        }
-    }
-}
-
-class AudioInputBufferIndicesChannel(
+class InputBufferIndicesChannel(
     private val mediaCodec: MediaCodec,
     private val channel: Channel<Result<Int, Error>>
 ) {
@@ -84,7 +56,7 @@ class AudioInputBufferIndicesChannel(
 }
 
 @ExperimentalCoroutinesApi
-fun MediaCodec.videoInputBufferIndicesChannel() = VideoInputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
+fun MediaCodec.videoInputBufferIndicesChannel() = InputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
     setCallback(object : MediaCodec.Callback() {
         override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
             val result = trySend(Result.Success(index))
@@ -118,7 +90,7 @@ fun MediaCodec.videoInputBufferIndicesChannel() = VideoInputBufferIndicesChannel
 @ExperimentalCoroutinesApi
 fun MediaCodec.audioInputBufferIndicesChannel(
     audioTrack: AudioTrack
-) = AudioInputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
+) = InputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
     setCallback(object : MediaCodec.Callback() {
         override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
             val result = trySend(Result.Success(index))
