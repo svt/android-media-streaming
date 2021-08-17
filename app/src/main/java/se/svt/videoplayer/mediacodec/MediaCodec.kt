@@ -125,10 +125,8 @@ fun MediaCodec.audioInputBufferIndicesChannel(
             index: Int,
             info: MediaCodec.BufferInfo
         ) {
-            Log.e("MediaCodec", "audio onOutputBufferAvailable")
             codec.getOutputBuffer(index)?.let {
                 val write = audioTrack.write(it, it.remaining(), WRITE_BLOCKING)
-                Log.e("AudioTrack", "write = $write")
             }
             releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
         }

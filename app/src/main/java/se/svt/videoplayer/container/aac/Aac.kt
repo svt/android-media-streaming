@@ -96,7 +96,6 @@ fun ByteReadChannel.aacFlow() = flow<Result<Packet, Error>> {
                                         .find { it.value == objectType + 1 }
                                         .okOrElse { Error.UnknownProfileObjectType(objectType) }
                                 }
-                                Log.e("AAC", "profileObjectType = ${profileObjectType}")
                                 val samplingFrequencyIndex = (thirdByte shr 2) and 0xF
                                 val privateBit = ((thirdByte shr 1) and 0x1) != 0
 
@@ -139,7 +138,6 @@ fun ByteReadChannel.aacFlow() = flow<Result<Packet, Error>> {
                                                 samplingFrequencyIndex,
                                                 channelConfiguration
                                             )
-                                            Log.e("AAC", "audioSpecificConfig = ${audioSpecificConfig[0]} ${audioSpecificConfig[1]}")
                                             Packet(
                                                 channels,
                                                 samplingFrequency,

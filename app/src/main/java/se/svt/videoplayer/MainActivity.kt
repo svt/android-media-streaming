@@ -100,8 +100,7 @@ class MainActivity : AppCompatActivity() {
                                 MODE_STREAM,
                                 AUDIO_SESSION_ID_GENERATE
                             ).apply {
-                                Log.e("AudioTrack", "state = ${this.state}")
-                                this.play()
+                                play()
                             }
 
                             val audioMediaCodec = MediaCodec.createByCodecName("OMX.google.aac.decoder")
@@ -167,7 +166,6 @@ class MainActivity : AppCompatActivity() {
                                 val audioMediaPlaylist =
                                     Uri.parse(audioBasePath)
                                         .let { basePath ->
-                                            Log.e("CONNECT", "$basePath/$audioLastPathSegment")
                                             client
                                                 .get<HttpResponse>(
                                                     Uri.parse("$basePath/$audioLastPathSegment")
@@ -192,7 +190,6 @@ class MainActivity : AppCompatActivity() {
                                 val mediaPlaylist =
                                     Uri.parse(basePath)
                                         .let { basePath ->
-                                            Log.e("CONNECT1", "$basePath/$lastPathSegment")
                                             client
                                                 .get<HttpResponse>(
                                                     Uri.parse("$basePath/$lastPathSegment")
