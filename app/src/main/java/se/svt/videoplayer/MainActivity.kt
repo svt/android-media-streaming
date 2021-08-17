@@ -80,8 +80,6 @@ class MainActivity : AppCompatActivity() {
                             // TODO: Don't redo all the work when we get a new surface
                             // TODO: Note that we need to recreate the codec though
 
-                            //val codecName = "OMX.android.goldfish.h264.decoder"
-                            //val codecName = "c2.qti.avc.decoder"
                             val mediaCodec = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.H264)?.name!!)
                             val bufferIndexChannel = mediaCodec.videoInputBufferIndicesChannel()
 
