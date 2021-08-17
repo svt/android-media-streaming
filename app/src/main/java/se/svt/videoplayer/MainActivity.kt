@@ -58,6 +58,8 @@ import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
 import java.nio.ByteBuffer
 import java.time.Duration
 import kotlin.math.absoluteValue
+import se.svt.videoplayer.container.aac.Error as AacError
+import se.svt.videoplayer.mediacodec.Error as MediaCodecError
 
 // https://api.svt.se/video/ewAdr96
 private val MANIFEST_URL =
@@ -67,6 +69,11 @@ data class PresentationTime(
     val pts: Duration,
     val realTime: Duration,
 )
+
+sealed class Error {
+    data class Aac(val error: AacError) : Error()
+    data class MediaCodec(val error: MediaCodecError) : Error()
+}
 
 class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.M)
@@ -199,19 +206,20 @@ class MainActivity : AppCompatActivity() {
                                             // TODO: errors and use timestamp
                                             it.aacFlow().ok!!.flow
                                         }
-                                        .collect { result ->
-                                            val packet = result.ok!!
+                                        .collect { packetResult ->
+                                            packetResult
+                                                .mapErr(Error::Aac)
+                                                .andThen { packet ->
+                                                    audioBufferIndexChannel.receive { inputBuffer ->
+                                                        inputBuffer.put(packet.data)
 
-                                            audioBufferIndexChannel.receive { inputBuffer ->
-                                                inputBuffer.put(packet.data)
-
-                                                Duration.ofNanos(System.nanoTime())
-                                            }
+                                                        Duration.ofNanos(System.nanoTime())
+                                                    }
+                                                        .mapErr(Error::MediaCodec)
+                                                }
                                                 .mapErr {
-                                                    Log.e(
-                                                        MainActivity::class.java.simpleName,
-                                                        "buffer index: $it"
-                                                    )
+                                                    Log.e(MainActivity::class.java.simpleName, "$it")
+                                                    Unit
                                                 }
                                         }
                                 }
