@@ -1,10 +1,6 @@
 package se.svt.videoplayer.mediacodec
 
 import android.media.AudioTrack
-import android.media.AudioTrack.ERROR_BAD_VALUE
-import android.media.AudioTrack.ERROR_DEAD_OBJECT
-import android.media.AudioTrack.ERROR_INVALID_OPERATION
-import android.media.AudioTrack.WRITE_BLOCKING
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -14,6 +10,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.BUFFERED
 import se.svt.videoplayer.Result
 import se.svt.videoplayer.andThen
+import se.svt.videoplayer.audiotrack.writeAllBlockingWithResult
 import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.mapErr
 import se.svt.videoplayer.okOrElse
@@ -25,10 +22,6 @@ sealed class Error {
     data class CodecException(val exception: MediaCodec.CodecException) : Error()
     data class NullInputBuffer(val index: Int) : Error()
     data class NoCodecForFormat(val format: Format) : Error()
-
-    object InvalidOperation : Error()
-    object BadValue : Error()
-    object DeadObject : Error()
 }
 
 class VideoInputBufferIndicesChannel(
@@ -157,11 +150,3 @@ fun MediaCodec.audioInputBufferIndicesChannel(
 fun mediaCodecInfoFromFormat(codecInfos: Array<MediaCodecInfo>, format: Format) = codecInfos.find {
     it.supportedTypes.contains(format.mimeType)
 }.okOrElse { Error.NoCodecForFormat(format) }
-
-fun AudioTrack.writeAllBlockingWithResult(byteBuffer: ByteBuffer): Result<Int, Error> =
-    when (val size = write(byteBuffer, byteBuffer.remaining(), WRITE_BLOCKING)) {
-        ERROR_INVALID_OPERATION -> Result.Error(Error.InvalidOperation)
-        ERROR_BAD_VALUE -> Result.Error(Error.BadValue)
-        ERROR_DEAD_OBJECT -> Result.Error(Error.DeadObject)
-        else -> Result.Success(size)
-    }
