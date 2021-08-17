@@ -17,7 +17,6 @@ import se.svt.videoplayer.andThen
 import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.mapErr
 import se.svt.videoplayer.okOrElse
-import java.lang.IllegalStateException
 import java.nio.ByteBuffer
 import java.time.Duration
 import java.util.concurrent.TimeUnit
@@ -25,6 +24,7 @@ import java.util.concurrent.TimeUnit
 sealed class Error {
     data class CodecException(val exception: MediaCodec.CodecException) : Error()
     data class NullInputBuffer(val index: Int) : Error()
+    data class NoCodecForFormat(val format: Format) : Error()
 
     object InvalidOperation : Error()
     object BadValue : Error()
@@ -154,9 +154,9 @@ fun MediaCodec.audioInputBufferIndicesChannel(
 })
 
 // TODO: There are duplicates for formats that expose other flags like secure surfaces and stuff.
-fun codecFromFormat(codecInfos: Array<MediaCodecInfo>, format: Format) = codecInfos.find {
+fun mediaCodecInfoFromFormat(codecInfos: Array<MediaCodecInfo>, format: Format) = codecInfos.find {
     it.supportedTypes.contains(format.mimeType)
-}
+}.okOrElse { Error.NoCodecForFormat(format) }
 
 fun AudioTrack.writeAllBlockingWithResult(byteBuffer: ByteBuffer): Result<Int, Error> =
     when (val size = write(byteBuffer, byteBuffer.remaining(), WRITE_BLOCKING)) {

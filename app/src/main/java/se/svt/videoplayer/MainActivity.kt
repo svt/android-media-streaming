@@ -41,7 +41,7 @@ import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.mediacodec.audioInputBufferIndicesChannel
-import se.svt.videoplayer.mediacodec.codecFromFormat
+import se.svt.videoplayer.mediacodec.mediaCodecInfoFromFormat
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
 import se.svt.videoplayer.streaming.hls.m3u.master.Type
 import se.svt.videoplayer.streaming.hls.m3u.master.parseMasterPlaylistM3u
@@ -80,7 +80,9 @@ class MainActivity : AppCompatActivity() {
                             // TODO: Don't redo all the work when we get a new surface
                             // TODO: Note that we need to recreate the codec though
 
-                            val videoBufferIndexChannel = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.H264)?.name!!)
+                            val videoBufferIndexChannel = MediaCodec.createByCodecName(
+                                mediaCodecInfoFromFormat(codecInfos, Format.H264).ok!!.name
+                            )
                                 .run {
                                     val bufferIndicesChannel = videoInputBufferIndicesChannel()
                                     configure(
@@ -99,7 +101,7 @@ class MainActivity : AppCompatActivity() {
                                     bufferIndicesChannel
                                 }
 
-                            val audioBufferIndexChannel = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.Aac)?.name!!)
+                            val audioBufferIndexChannel = MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).ok!!.name)
                                 .run {
                                     val bufferIndicesChannel =
                                         audioInputBufferIndicesChannel(AudioTrack(
