@@ -61,100 +61,87 @@ enum class ObjectType(val value: Int) {
 
 fun ByteReadChannel.aacFlow() = flow<Result<Packet, Error>> {
     try {
-        when (val id3Frames = id3()) {
-            is Result.Success -> {
-                val timestampResult = id3Frames.data.find {
-                    it.owner == "com.apple.streaming.transportStreamTimestamp"
-                }
+        val timestampResult = id3()
+            .andThen { result ->
+                result.find { it.owner == "com.apple.streaming.transportStreamTimestamp" }
                     .okOr(Error.MissingId3TimestampFrame)
-                    .andThen { (if (it is Frame.Priv) it.data else null).okOr(Error.ExpectedPrivFrame) }
-                    .andThen { data ->
-                        if (data.size == 8) {
-                            Result.Success(ByteReadChannel(data).readLong() and 0x1FFFFFFFFL)
-                        } else Result.Error(Error.Expected8OctetTimestamp)
-                    }
-                when (timestampResult) {
-                    is Result.Success -> {
-                        // TODO: Pass as Result<WrappingPackage(timestamp, Flow<..>), Error>
-                        val timestamp = Duration.ofNanos(TimeUnit.MICROSECONDS.toNanos(timestampResult.data)) // TODO: Introduce ofMicros
+            }
+            .andThen { (if (it is Frame.Priv) it.data else null).okOr(Error.ExpectedPrivFrame) }
+            .andThen { it.takeIf { it.size == 8 }.okOr(Error.Expected8OctetTimestamp) }
+            .map { ByteReadChannel(it).readLong() and 0x1FFFFFFFFL }
+            .map { Duration.ofNanos(TimeUnit.MICROSECONDS.toNanos(it)) }
 
-                        while (true) {
-                            val firstByte = readByte().toUByte().toInt()
-                            val secondByte = readByte().toUByte().toInt()
-                            val sync = (firstByte shl 4) or (secondByte shr 4)
+        while (true) {
+            val firstByte = readByte().toUByte().toInt()
+            val secondByte = readByte().toUByte().toInt()
+            val sync = (firstByte shl 4) or (secondByte shr 4)
 
-                            if (sync != 0xFFF) {
-                                emit(Result.Error<Packet, Error>(Error.ExpectedSync))
-                                break
-                            } else {
-                                val id = (secondByte shr 3) and 0x1
-                                val layer = (secondByte shr 1) and 0x3
-                                val protectionAbsent = (secondByte and 0x1) != 0
+            if (sync != 0xFFF) {
+                emit(Result.Error<Packet, Error>(Error.ExpectedSync))
+                break
+            } else {
+                val id = (secondByte shr 3) and 0x1
+                val layer = (secondByte shr 1) and 0x3
+                val protectionAbsent = (secondByte and 0x1) != 0
 
-                                val thirdByte = readByte().toUByte().toInt()
-                                val profileObjectType = (thirdByte shr 6).let { objectType ->
-                                    ObjectType.values()
-                                        .find { it.value == objectType + 1 }
-                                        .okOrElse { Error.UnknownProfileObjectType(objectType) }
-                                }
-                                val samplingFrequencyIndex = (thirdByte shr 2) and 0xF
-                                val privateBit = ((thirdByte shr 1) and 0x1) != 0
+                val thirdByte = readByte().toUByte().toInt()
+                val profileObjectType = (thirdByte shr 6).let { objectType ->
+                    ObjectType.values()
+                        .find { it.value == objectType + 1 }
+                        .okOrElse { Error.UnknownProfileObjectType(objectType) }
+                }
+                val samplingFrequencyIndex = (thirdByte shr 2) and 0xF
+                val privateBit = ((thirdByte shr 1) and 0x1) != 0
 
-                                val fourthByte = readByte().toUByte().toInt()
-                                val channelConfiguration = ((thirdByte shl 2) or (fourthByte shr 6)) and 0x07
-                                val originalCopy = ((fourthByte shr 5) and 0x1) != 0
-                                val home = ((fourthByte shr 4) and 0x1) != 0
+                val fourthByte = readByte().toUByte().toInt()
+                val channelConfiguration = ((thirdByte shl 2) or (fourthByte shr 6)) and 0x07
+                val originalCopy = ((fourthByte shr 5) and 0x1) != 0
+                val home = ((fourthByte shr 4) and 0x1) != 0
 
-                                // variable header
-                                val copyrightIdentificationBit = ((fourthByte shr 3) and 0x1) != 0
-                                val copyrightIdentificationStart = ((fourthByte shr 2) and 0x1) != 0
+                // variable header
+                val copyrightIdentificationBit = ((fourthByte shr 3) and 0x1) != 0
+                val copyrightIdentificationStart = ((fourthByte shr 2) and 0x1) != 0
 
-                                val fifthByte = readByte().toUByte().toInt()
-                                val sixthByte = readByte().toUByte().toInt()
+                val fifthByte = readByte().toUByte().toInt()
+                val sixthByte = readByte().toUByte().toInt()
 
-                                val frameLength =
-                                    ((fourthByte shl 11) or (fifthByte shl 3) or (sixthByte shr 5)) and 0x1FFF
+                val frameLength =
+                    ((fourthByte shl 11) or (fifthByte shl 3) or (sixthByte shr 5)) and 0x1FFF
 
-                                val seventhByte = readByte().toUByte().toInt()
-                                val bufFullness = (sixthByte and 0x1F) or (seventhByte shr 2)
-                                val numberOfRawDataBlocksInFrame = seventhByte and 0x3
+                val seventhByte = readByte().toUByte().toInt()
+                val bufFullness = (sixthByte and 0x1F) or (seventhByte shr 2)
+                val numberOfRawDataBlocksInFrame = seventhByte and 0x3
 
-                                if (!protectionAbsent) {
-                                    val crcCheck = readShort().toUShort().toInt()
-                                    // TODO: Do crc check
-                                }
+                if (!protectionAbsent) {
+                    val crcCheck = readShort().toUShort().toInt()
+                    // TODO: Do crc check
+                }
 
-                                val channels = channelConfiguration + if (channelConfiguration == 0x07) 1 else 0
-                                val samplingFrequencyResult = SAMPLING_FREQUENCY_TABLE
-                                    .getOrNull(samplingFrequencyIndex)
-                                    .okOrElse { Error.UnknownSamplingFrequencyIndex(samplingFrequencyIndex) }
+                val channels = channelConfiguration + if (channelConfiguration == 0x07) 1 else 0
+                val samplingFrequencyResult = SAMPLING_FREQUENCY_TABLE
+                    .getOrNull(samplingFrequencyIndex)
+                    .okOrElse { Error.UnknownSamplingFrequencyIndex(samplingFrequencyIndex) }
 
-                                val size = frameLength - HEADER_SIZE - if (protectionAbsent) 0 else 2
+                val size = frameLength - HEADER_SIZE - if (protectionAbsent) 0 else 2
 
-                                val result: Result<Packet, Error> =
-                                    samplingFrequencyResult.andThen { samplingFrequency ->
-                                        profileObjectType.map { objectType ->
-                                            val audioSpecificConfig = audioSpecificConfig(
-                                                objectType,
-                                                samplingFrequencyIndex,
-                                                channelConfiguration
-                                            )
-                                            Packet(
-                                                channels,
-                                                samplingFrequency,
-                                                ByteArray(size).apply { readFully(this) },
-                                                audioSpecificConfig
-                                            )
-                                        }
-                                    }
-                                emit(result)
-                            }
+                val result: Result<Packet, Error> =
+                    samplingFrequencyResult.andThen { samplingFrequency ->
+                        profileObjectType.map { objectType ->
+                            val audioSpecificConfig = audioSpecificConfig(
+                                objectType,
+                                samplingFrequencyIndex,
+                                channelConfiguration
+                            )
+                            Packet(
+                                channels,
+                                samplingFrequency,
+                                ByteArray(size).apply { readFully(this) },
+                                audioSpecificConfig
+                            )
                         }
                     }
-                    is Result.Error -> emit(Result.Error(timestampResult.exception))
-                }
+                emit(result)
             }
-            is Result.Error -> emit(Result.Error(Error.Id3(id3Frames.exception)))
         }
     } catch (e: ClosedReceiveChannelException) {}
 }
