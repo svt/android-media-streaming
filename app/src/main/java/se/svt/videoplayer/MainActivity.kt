@@ -83,27 +83,26 @@ class MainActivity : AppCompatActivity() {
                             val mediaCodec = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.H264)?.name!!)
                             val bufferIndexChannel = mediaCodec.videoInputBufferIndicesChannel()
 
-                            val audioTrack = AudioTrack(
-                                AudioAttributes.Builder()
-                                    .setUsage(USAGE_MEDIA)
-                                    .setContentType(CONTENT_TYPE_UNKNOWN)
-                                    .setFlags(0)
-                                    .build(),
-                                AudioFormat.Builder()
-                                    .setSampleRate(/*packet.samplingFrequency*/48000) // TODO
-                                    .setChannelMask(12) // TODO
-                                    .setEncoding(ENCODING_PCM_16BIT) // TODO
-                                    .build(),
-                                /*packet.samplingFrequency*/48000, // TODO
-                                MODE_STREAM,
-                                AUDIO_SESSION_ID_GENERATE
-                            ).apply {
-                                play()
-                            }
-
                             val audioBufferIndexChannel = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.Aac)?.name!!)
                                 .run {
-                                    val bufferIndicesChannel = audioInputBufferIndicesChannel(audioTrack)
+                                    val bufferIndicesChannel =
+                                        audioInputBufferIndicesChannel(AudioTrack(
+                                            AudioAttributes.Builder()
+                                                .setUsage(USAGE_MEDIA)
+                                                .setContentType(CONTENT_TYPE_UNKNOWN)
+                                                .setFlags(0)
+                                                .build(),
+                                            AudioFormat.Builder()
+                                                .setSampleRate(/*packet.samplingFrequency*/48000) // TODO
+                                                .setChannelMask(12) // TODO
+                                                .setEncoding(ENCODING_PCM_16BIT) // TODO
+                                                .build(),
+                                            /*packet.samplingFrequency*/48000, // TODO
+                                            MODE_STREAM,
+                                            AUDIO_SESSION_ID_GENERATE
+                                        ).apply {
+                                            play()
+                                        })
 
                                     configure(
                                         MediaFormat().apply {
