@@ -162,20 +162,10 @@ class MainActivity : AppCompatActivity() {
                                     it.alternateRenditions.find { it.type == Type.AUDIO && it.channels == 2 && it.language == "sv" }
                                 }.ok!!
 
-                                val audioLastPathSegment = audio.uri.lastPathSegment!!
-                                val audioBasePath = audioLastPathSegment.let { audio.uri.toString().removeSuffix(it) }
-
-                                val audioMediaPlaylist =
-                                    Uri.parse(audioBasePath)
-                                        .let { basePath ->
-                                            client
-                                                .get<HttpResponse>(
-                                                    Uri.parse("$basePath/$audioLastPathSegment")
-                                                        .toString()
-                                                )
-                                                .receive<ByteReadChannel>()
-                                                .parseMediaPlaylistM3u(basePath)
-                                        }
+                                val audioMediaPlaylist = client
+                                    .get<HttpResponse>(audio.uri.toString())
+                                    .receive<ByteReadChannel>()
+                                    .parseMediaPlaylistM3u(audio.uri.removeLastPathSegmentIfAny())
 
                                 // Pick video by resolution
                                 // TODO: Pick by bandwidth and/or a combination
@@ -189,17 +179,10 @@ class MainActivity : AppCompatActivity() {
                                 val lastPathSegment = entry.uri.lastPathSegment!!
                                 val basePath = lastPathSegment.let { entry.uri.toString().removeSuffix(it) }
 
-                                val mediaPlaylist =
-                                    Uri.parse(basePath)
-                                        .let { basePath ->
-                                            client
-                                                .get<HttpResponse>(
-                                                    Uri.parse("$basePath/$lastPathSegment")
-                                                        .toString()
-                                                )
-                                                .receive<ByteReadChannel>()
-                                                .parseMediaPlaylistM3u(basePath)
-                                        }
+                                val mediaPlaylist = client
+                                    .get<HttpResponse>(entry.uri.toString())
+                                    .receive<ByteReadChannel>()
+                                    .parseMediaPlaylistM3u(entry.uri.removeLastPathSegmentIfAny())
 
                                 // TODO: This must be done in parallel with video below, use async {}
                                 val deferredAudio = async {
