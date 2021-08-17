@@ -80,8 +80,24 @@ class MainActivity : AppCompatActivity() {
                             // TODO: Don't redo all the work when we get a new surface
                             // TODO: Note that we need to recreate the codec though
 
-                            val mediaCodec = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.H264)?.name!!)
-                            val bufferIndexChannel = mediaCodec.videoInputBufferIndicesChannel()
+                            val videoBufferIndexChannel = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.H264)?.name!!)
+                                .run {
+                                    val bufferIndicesChannel = videoInputBufferIndicesChannel()
+                                    configure(
+                                        MediaFormat().apply {
+                                            setString("mime", "video/avc")
+                                            setInteger("width", 1280)
+                                            setInteger("height", 720)
+                                        },
+                                        surfaceHolderConfiguration.surfaceHolder.surface,
+                                        null,
+                                        0
+                                    )
+
+                                    start()
+
+                                    bufferIndicesChannel
+                                }
 
                             val audioBufferIndexChannel = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.Aac)?.name!!)
                                 .run {
@@ -123,21 +139,6 @@ class MainActivity : AppCompatActivity() {
 
                                     bufferIndicesChannel
                                 }
-
-                            mediaCodec.apply {
-                                configure(
-                                    MediaFormat().apply {
-                                        setString("mime", "video/avc")
-                                        setInteger("width", 1280)
-                                        setInteger("height", 720)
-                                    },
-                                    surfaceHolderConfiguration.surfaceHolder.surface,
-                                    null,
-                                    0
-                                )
-
-                                start()
-                            }
 
                             withContext(Dispatchers.IO) {
                                 // api.svt.se/video/ewAdr96
@@ -252,7 +253,7 @@ class MainActivity : AppCompatActivity() {
                                         .mapNotNull { it.ok } // TODO: Handle errors
                                         .buffer()
                                         .collect { pes ->
-                                            bufferIndexChannel.receive { inputBuffer ->
+                                            videoBufferIndexChannel.receive { inputBuffer ->
                                                 inputBuffer.put(
                                                     // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
                                                     pes.byteReadChannel.readRemaining().run {
