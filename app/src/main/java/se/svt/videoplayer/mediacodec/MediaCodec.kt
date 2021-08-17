@@ -2,7 +2,6 @@ package se.svt.videoplayer.mediacodec
 
 import android.media.AudioTrack
 import android.media.MediaCodec
-import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.util.Log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -125,8 +124,3 @@ fun MediaCodec.audioInputBufferIndicesChannel(
         }
     })
 })
-
-// TODO: There are duplicates for formats that expose other flags like secure surfaces and stuff.
-fun mediaCodecInfoFromFormat(codecInfos: Array<MediaCodecInfo>, format: Format) = codecInfos.find {
-    it.supportedTypes.contains(format.mimeType)
-}.okOrElse { Error.NoCodecForFormat(format) }
