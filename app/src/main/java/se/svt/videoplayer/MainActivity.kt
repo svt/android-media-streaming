@@ -11,6 +11,13 @@ import android.media.AudioTrack.MODE_STREAM
 import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.media.MediaFormat.KEY_CHANNEL_COUNT
+import android.media.MediaFormat.KEY_HEIGHT
+import android.media.MediaFormat.KEY_MIME
+import android.media.MediaFormat.KEY_OPERATING_RATE
+import android.media.MediaFormat.KEY_PRIORITY
+import android.media.MediaFormat.KEY_SAMPLE_RATE
+import android.media.MediaFormat.KEY_WIDTH
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -87,9 +94,9 @@ class MainActivity : AppCompatActivity() {
                                     val bufferIndicesChannel = videoInputBufferIndicesChannel()
                                     configure(
                                         MediaFormat().apply {
-                                            setString("mime", "video/avc")
-                                            setInteger("width", 1280)
-                                            setInteger("height", 720)
+                                            setString(KEY_MIME, Format.H264.mimeType)
+                                            setInteger(KEY_WIDTH, 1280)
+                                            setInteger(KEY_HEIGHT, 720)
                                         },
                                         surfaceHolderConfiguration.surfaceHolder.surface,
                                         null,
@@ -124,11 +131,11 @@ class MainActivity : AppCompatActivity() {
 
                                     configure(
                                         MediaFormat().apply {
-                                            setFloat("operating-rate", 48000.toFloat()/*packet.samplingFrequency.toFloat()*/) // TODO
-                                            setInteger("sample-rate", 48000/*packet.samplingFrequency*/) // TODO
-                                            setString("mime", "audio/mp4a-latm")
-                                            setInteger("channel-count", 2/*packet.channels*/) // TODO
-                                            setInteger("priority", 0)
+                                            setFloat(KEY_OPERATING_RATE, 48000.toFloat()/*packet.samplingFrequency.toFloat()*/) // TODO
+                                            setInteger(KEY_SAMPLE_RATE, 48000/*packet.samplingFrequency*/) // TODO
+                                            setString(KEY_MIME, Format.Aac.mimeType)
+                                            setInteger(KEY_CHANNEL_COUNT, 2/*packet.channels*/) // TODO
+                                            setInteger(KEY_PRIORITY, 0 /* realtime */)
                                             // TODO: Look at "csd-" + i logic in ExoPlayer
                                             // TODO: We have an audioSpecific config in the Aac packages, use it!
                                             setByteBuffer("csd-0", ByteBuffer.wrap(byteArrayOf(17, -112)))
