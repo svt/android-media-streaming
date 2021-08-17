@@ -99,17 +99,22 @@ class MainActivity : AppCompatActivity() {
                             // TODO: Don't redo all the work when we get a new surface
                             // TODO: Note that we need to recreate the codec though
 
-                            val videoBufferIndexChannelProvider = SingleElementCache { _: Int ->
+                            data class VideoMediaCodecArguments(
+                                val format: Format,
+                                val width: Int,
+                                val height: Int,
+                            )
+                            val videoBufferIndexChannelProvider = SingleElementCache { videoMediaCodecArguments: VideoMediaCodecArguments ->
                                 MediaCodec.createByCodecName(
-                                    mediaCodecInfoFromFormat(codecInfos, Format.H264).ok!!.name
+                                    mediaCodecInfoFromFormat(codecInfos, videoMediaCodecArguments.format).ok!!.name
                                 )
                                     .run {
                                         val bufferIndicesChannel = videoInputBufferIndicesChannel()
                                         configure(
                                             MediaFormat().apply {
-                                                setString(KEY_MIME, Format.H264.mimeType)
-                                                setInteger(KEY_WIDTH, 1280)
-                                                setInteger(KEY_HEIGHT, 720)
+                                                setString(KEY_MIME, videoMediaCodecArguments.format.mimeType)
+                                                setInteger(KEY_WIDTH, videoMediaCodecArguments.width)
+                                                setInteger(KEY_HEIGHT, videoMediaCodecArguments.height)
                                             },
                                             surfaceHolderConfiguration.surfaceHolder.surface,
                                             null,
@@ -121,7 +126,13 @@ class MainActivity : AppCompatActivity() {
                                         bufferIndicesChannel
                                     }
                             }
-                            val audioBufferIndexChannelProvider = SingleElementCache { _: Int ->
+
+                            data class AudioMediaCodecArguments(
+                                val samplingFrequency: Int,
+                                val audioSpecificConfigs: List<ByteArray>,
+                                val channels: Int
+                            )
+                            val audioBufferIndexChannelProvider = SingleElementCache { audioMediaCodecArguments: AudioMediaCodecArguments ->
                                 MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).ok!!.name)
                                     .run {
                                         val bufferIndicesChannel =
@@ -132,11 +143,11 @@ class MainActivity : AppCompatActivity() {
                                                     .setFlags(0)
                                                     .build(),
                                                 AudioFormat.Builder()
-                                                    .setSampleRate(/*packet.samplingFrequency*/48000) // TODO
+                                                    .setSampleRate(audioMediaCodecArguments.samplingFrequency)
                                                     .setChannelMask(12) // TODO
                                                     .setEncoding(ENCODING_PCM_16BIT) // TODO
                                                     .build(),
-                                                /*packet.samplingFrequency*/48000, // TODO
+                                                audioMediaCodecArguments.samplingFrequency,
                                                 MODE_STREAM,
                                                 AUDIO_SESSION_ID_GENERATE
                                             ).apply {
@@ -145,14 +156,14 @@ class MainActivity : AppCompatActivity() {
 
                                         configure(
                                             MediaFormat().apply {
-                                                setFloat(KEY_OPERATING_RATE, 48000.toFloat()/*packet.samplingFrequency.toFloat()*/) // TODO
-                                                setInteger(KEY_SAMPLE_RATE, 48000/*packet.samplingFrequency*/) // TODO
+                                                setFloat(KEY_OPERATING_RATE, audioMediaCodecArguments.samplingFrequency.toFloat())
+                                                setInteger(KEY_SAMPLE_RATE, audioMediaCodecArguments.samplingFrequency)
                                                 setString(KEY_MIME, Format.Aac.mimeType)
-                                                setInteger(KEY_CHANNEL_COUNT, 2/*packet.channels*/) // TODO
+                                                setInteger(KEY_CHANNEL_COUNT, audioMediaCodecArguments.channels)
                                                 setInteger(KEY_PRIORITY, 0 /* realtime */)
-                                                // TODO: Look at "csd-" + i logic in ExoPlayer
-                                                // TODO: We have an audioSpecific config in the Aac packages, use it!
-                                                setByteBuffer("csd-0", ByteBuffer.wrap(byteArrayOf(17, -112)))
+                                                audioMediaCodecArguments.audioSpecificConfigs.forEachIndexed { index, it ->
+                                                    setByteBuffer("csd-$index", ByteBuffer.wrap(it))
+                                                }
                                             },
                                             null,
                                             null,
@@ -214,11 +225,15 @@ class MainActivity : AppCompatActivity() {
                                             packetResult
                                                 .mapErr(Error::Aac)
                                                 .andThen { packet ->
-                                                    audioBufferIndexChannelProvider.get(0).receive { inputBuffer ->
-                                                        inputBuffer.put(packet.data)
-
-                                                        Duration.ofNanos(System.nanoTime())
-                                                    }
+                                                    audioBufferIndexChannelProvider.get(AudioMediaCodecArguments(
+                                                        packet.samplingFrequency,
+                                                        listOf(packet.audioSpecificConfig),
+                                                        packet.channels
+                                                    ))
+                                                        .receive { inputBuffer ->
+                                                            inputBuffer.put(packet.data)
+                                                            Duration.ofNanos(System.nanoTime())
+                                                        }
                                                         .mapErr(Error::MediaCodec)
                                                 }
                                                 .mapErr {
@@ -250,7 +265,12 @@ class MainActivity : AppCompatActivity() {
                                         .mapNotNull { it.ok } // TODO: Handle errors
                                         .buffer()
                                         .collect { pes ->
-                                            videoBufferIndexChannelProvider.get(0)
+                                            videoBufferIndexChannelProvider.get(VideoMediaCodecArguments(
+                                                // TODO: Read from TS
+                                                Format.H264,
+                                                1280,
+                                                720
+                                            ))
                                                 .receive { inputBuffer ->
                                                     inputBuffer.put(
                                                         // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
