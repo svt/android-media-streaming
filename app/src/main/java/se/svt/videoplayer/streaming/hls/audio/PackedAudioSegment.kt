@@ -60,7 +60,7 @@ suspend fun ByteReadChannel.id3(): Result<List<Frame>, Error> {
     } else {
         val majorVersion = readByte().toUByte().toInt()
         val minorVersion = readByte().toUByte().toInt()
-        val version: Result<Version, Error> = when (majorVersion) {
+        val versionResult: Result<Version, Error> = when (majorVersion) {
             2 -> Result.Success(Version.V2(minorVersion))
             3 -> Result.Success(Version.V3(minorVersion))
             4 -> Result.Success(Version.V4(minorVersion))
@@ -71,7 +71,7 @@ suspend fun ByteReadChannel.id3(): Result<List<Frame>, Error> {
 
         val unsynchronized = majorVersion < 4 && (flags and 0x80) != 0
 
-        version.andThen { version ->
+        versionResult.andThen { version ->
             val framesSizeResult: Result<Int, Error> = when (version) {
                 is Version.V2 -> {
                     val compressed = flags and 0x40 != 0
