@@ -1,6 +1,5 @@
 package se.svt.videoplayer.streaming.hls.audio
 
-import android.util.Log
 import io.ktor.utils.io.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import se.svt.videoplayer.Result
@@ -28,10 +27,6 @@ sealed class Frame {
     data class Priv(override val owner: String, val data: ByteArray) : Frame()
 }
 
-data class Packet(
-    val frames: List<Frame>
-)
-
 object FrameFlags {
     object V3 {
         const val COMPRESSED = 0x0080
@@ -55,7 +50,7 @@ object TextEncoding {
     const val UTF_8 = 3
 }
 
-suspend fun ByteReadChannel.id3(): Result<Packet, Error> {
+suspend fun ByteReadChannel.id3(): Result<List<Frame>, Error> {
     val firstByte = readByte().toUByte().toInt()
     val secondByte = readByte().toUByte().toInt()
     val thirdByte = readByte().toUByte().toInt()
@@ -301,7 +296,7 @@ suspend fun ByteReadChannel.id3(): Result<Packet, Error> {
                         }
                     }
                 } catch (e: ClosedReceiveChannelException) {}
-                Packet(frames)
+                frames
             }
         }
     }

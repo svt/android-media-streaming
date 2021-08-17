@@ -1,6 +1,5 @@
 package se.svt.videoplayer.container.aac
 
-import android.util.Log
 import io.ktor.utils.io.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.flow.flow
@@ -17,7 +16,7 @@ import se.svt.videoplayer.streaming.hls.audio.Error as Id3Error
 
 sealed class Error {
     object ExpectedSync : Error()
-    data class InvalidSamplingFrequencyIndex(val index: Int): Error()
+    data class UnknownSamplingFrequencyIndex(val index: Int): Error()
     data class Id3(val error: Id3Error) : Error()
     object MissingId3TimestampFrame : Error()
     object ExpectedPrivFrame: Error()
@@ -26,7 +25,9 @@ sealed class Error {
 }
 
 private const val HEADER_SIZE = 7
-private val SAMPLING_FREQUENCY_TABLE = arrayOf(96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350)
+private val SAMPLING_FREQUENCY_TABLE = arrayOf(
+    96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350
+)
 
 data class Packet(
     val channels: Int,
@@ -62,7 +63,7 @@ fun ByteReadChannel.aacFlow() = flow<Result<Packet, Error>> {
     try {
         when (val id3Frames = id3()) {
             is Result.Success -> {
-                val timestampResult = id3Frames.data.frames.find {
+                val timestampResult = id3Frames.data.find {
                     it.owner == "com.apple.streaming.transportStreamTimestamp"
                 }
                     .okOr(Error.MissingId3TimestampFrame)
@@ -126,7 +127,7 @@ fun ByteReadChannel.aacFlow() = flow<Result<Packet, Error>> {
                                 val channels = channelConfiguration + if (channelConfiguration == 0x07) 1 else 0
                                 val samplingFrequencyResult = SAMPLING_FREQUENCY_TABLE
                                     .getOrNull(samplingFrequencyIndex)
-                                    .okOrElse { Error.InvalidSamplingFrequencyIndex(samplingFrequencyIndex) }
+                                    .okOrElse { Error.UnknownSamplingFrequencyIndex(samplingFrequencyIndex) }
 
                                 val size = frameLength - HEADER_SIZE - if (protectionAbsent) 0 else 2
 
