@@ -59,6 +59,10 @@ import java.nio.ByteBuffer
 import java.time.Duration
 import kotlin.math.absoluteValue
 
+// api.svt.se/video/ewAdr96
+private val MANIFEST_URL =
+    Uri.parse("https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43/hls-ts-full.m3u8?alt=https%3A%2F%2Fswitcher.cdn.svt.se%2F5a3fd48e-c39a-4e43-959f-39c41e79ac43%2Fhls-ts-full.m3u8")
+
 data class PresentationTime(
     val pts: Duration,
     val realTime: Duration,
@@ -150,53 +154,42 @@ class MainActivity : AppCompatActivity() {
                                 }
 
                             withContext(Dispatchers.IO) {
-                                // api.svt.se/video/ewAdr96
+                                val masterPlaylist = MANIFEST_URL
+                                    .let { masterPlaylistUrl ->
+                                        client
+                                            .get<HttpResponse>(masterPlaylistUrl.toString())
+                                            .receive<ByteReadChannel>()
+                                            .parseMasterPlaylistM3u(masterPlaylistUrl.removeLastPathSegmentIfAny())
+                                    }
 
-                                val masterPlaylist =
-                                    Uri.parse("https://svt-vod-10a.akamaized.net/d0/world/20210630/5a3fd48e-c39a-4e43-959f-39c41e79ac43")
-                                        .let { basePath ->
-                                            client
-                                                .get<HttpResponse>(
-                                                    Uri.parse("$basePath/hls-ts-full.m3u8?alt=https%3A%2F%2Fswitcher.cdn.svt.se%2F5a3fd48e-c39a-4e43-959f-39c41e79ac43%2Fhls-ts-full.m3u8")
-                                                        .toString()
-                                                )
-                                                .receive<ByteReadChannel>()
-                                                .parseMasterPlaylistM3u(basePath)
-                                        }
-                                Log.e("masterPlaylist", "masterPlaylist: $masterPlaylist")
+                                val audioMediaPlaylist = masterPlaylist.map { playlist ->
+                                    playlist.alternateRenditions.find { it.type == Type.AUDIO && it.channels == 2 && it.language == "sv" }
+                                }.ok!!.let { audio ->
+                                    client
+                                        .get<HttpResponse>(audio.uri.toString())
+                                        .receive<ByteReadChannel>()
+                                        .parseMediaPlaylistM3u(audio.uri.removeLastPathSegmentIfAny())
+                                }
 
-                                val audio = masterPlaylist.map {
-                                    it.alternateRenditions.find { it.type == Type.AUDIO && it.channels == 2 && it.language == "sv" }
-                                }.ok!!
-
-                                val audioMediaPlaylist = client
-                                    .get<HttpResponse>(audio.uri.toString())
-                                    .receive<ByteReadChannel>()
-                                    .parseMediaPlaylistM3u(audio.uri.removeLastPathSegmentIfAny())
-
-                                // Pick video by resolution
                                 // TODO: Pick by bandwidth and/or a combination
-                                val entry = masterPlaylist.ok!!.entries.minByOrNull { entry ->
+                                val videoMediaPlaylist = masterPlaylist.ok!!.entries.minByOrNull { entry ->
                                     // TODO: Don't crash
                                     entry.resolution!!.let { (width, height) ->
                                         (width - surfaceHolderConfiguration.width).absoluteValue + (height - surfaceHolderConfiguration.height).absoluteValue
                                     }
-                                }!!
-
-                                val lastPathSegment = entry.uri.lastPathSegment!!
-                                val basePath = lastPathSegment.let { entry.uri.toString().removeSuffix(it) }
-
-                                val mediaPlaylist = client
-                                    .get<HttpResponse>(entry.uri.toString())
-                                    .receive<ByteReadChannel>()
-                                    .parseMediaPlaylistM3u(entry.uri.removeLastPathSegmentIfAny())
+                                }!!.let { entry ->
+                                    client
+                                        .get<HttpResponse>(entry.uri.toString())
+                                        .receive<ByteReadChannel>()
+                                        .parseMediaPlaylistM3u(entry.uri.removeLastPathSegmentIfAny())
+                                }
 
                                 // TODO: This must be done in parallel with video below, use async {}
                                 val deferredAudio = async {
                                     audioMediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
                                         .asFlow()
                                         .map {
-                                            Log.e(MainActivity::class.java.simpleName, "Fetch $it")
+                                            Log.e(MainActivity::class.java.simpleName, "Audio fetch $it")
                                             val get: HttpResponse = client.get(it.toString())
                                             val channel: ByteReadChannel = get.receive()
                                             channel
@@ -224,7 +217,7 @@ class MainActivity : AppCompatActivity() {
                                 }
 
                                 val deferredVideo = async {
-                                    mediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
+                                    videoMediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
                                         .asFlow()
                                         .map {
                                             Log.e(MainActivity::class.java.simpleName, "Fetch $it")
