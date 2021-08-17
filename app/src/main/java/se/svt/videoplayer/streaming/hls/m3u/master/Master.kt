@@ -119,7 +119,11 @@ suspend fun ByteReadChannel.parseMasterPlaylistM3u(baseUri: Uri): Result<Playlis
 
                     alternateRenditions.add(AlternateRendition(
                         Type.values().find { it.string == keyValues["TYPE"]!! }!!, // TODO: Error handling
-                        keyValues["URI"]?.let(Uri::parse)!!,
+                        keyValues["URI"]?.let { uriString ->
+                            if (urlRegex.matchEntire(uriString) != null) {
+                                Uri.parse(uriString)
+                            } else baseUri.buildUpon().appendEncodedPath(uriString).build()
+                        }!!,
                         keyValues["GROUP-ID"]!!,
                         keyValues["LANGUAGE"],
                         keyValues["NAME"]!!,

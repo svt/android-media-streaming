@@ -1,5 +1,13 @@
 package se.svt.videoplayer
 
+import android.media.AudioAttributes
+import android.media.AudioAttributes.CONTENT_TYPE_UNKNOWN
+import android.media.AudioAttributes.USAGE_MEDIA
+import android.media.AudioFormat
+import android.media.AudioFormat.ENCODING_PCM_16BIT
+import android.media.AudioManager.AUDIO_SESSION_ID_GENERATE
+import android.media.AudioTrack
+import android.media.AudioTrack.MODE_STREAM
 import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
@@ -26,16 +34,21 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import se.svt.videoplayer.container.aac.aacFlow
 import se.svt.videoplayer.container.ts.streams.streams
 import se.svt.videoplayer.container.ts.tsFlow
 import se.svt.videoplayer.databinding.ActivityMainBinding
 import se.svt.videoplayer.format.Format
+import se.svt.videoplayer.mediacodec.audioInputBufferIndicesChannel
 import se.svt.videoplayer.mediacodec.codecFromFormat
 import se.svt.videoplayer.mediacodec.videoInputBufferIndicesChannel
+import se.svt.videoplayer.streaming.hls.m3u.master.Type
 import se.svt.videoplayer.streaming.hls.m3u.master.parseMasterPlaylistM3u
 import se.svt.videoplayer.streaming.hls.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.streaming.hls.tsAsHls
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.time.Duration
 import kotlin.math.absoluteValue
 
@@ -71,6 +84,48 @@ class MainActivity : AppCompatActivity() {
                             //val codecName = "c2.qti.avc.decoder"
                             val mediaCodec = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.H264)?.name!!)
                             val bufferIndexChannel = mediaCodec.videoInputBufferIndicesChannel()
+
+                            val audioTrack = AudioTrack(
+                                AudioAttributes.Builder()
+                                    .setUsage(USAGE_MEDIA)
+                                    .setContentType(CONTENT_TYPE_UNKNOWN)
+                                    .setFlags(0)
+                                    .build(),
+                                AudioFormat.Builder()
+                                    .setSampleRate(/*packet.samplingFrequency*/48000) // TODO
+                                    .setChannelMask(12) // TODO
+                                    .setEncoding(ENCODING_PCM_16BIT) // TODO
+                                    .build(),
+                                /*packet.samplingFrequency*/48000, // TODO
+                                MODE_STREAM,
+                                AUDIO_SESSION_ID_GENERATE
+                            ).apply {
+                                Log.e("AudioTrack", "state = ${this.state}")
+                                this.play()
+                            }
+
+                            val audioMediaCodec = MediaCodec.createByCodecName("OMX.google.aac.decoder")
+
+                            val audioBufferIndexChannel = audioMediaCodec.audioInputBufferIndicesChannel(audioTrack)
+                            audioMediaCodec.apply {
+                                configure(
+                                    MediaFormat().apply {
+                                        setFloat("operating-rate", 48000.toFloat()/*packet.samplingFrequency.toFloat()*/) // TODO
+                                        setInteger("sample-rate", 48000/*packet.samplingFrequency*/) // TODO
+                                        setString("mime", "audio/mp4a-latm")
+                                        setInteger("channel-count", 2/*packet.channels*/) // TODO
+                                        setInteger("priority", 0)
+                                        // TODO: Look at "csd-" + i logic in ExoPlayer
+                                        // TODO: We have an audioSpecific config in the Aac packages, use it!
+                                        setByteBuffer("csd-0", ByteBuffer.wrap(byteArrayOf(17, -112)))
+                                    },
+                                    null,
+                                    null,
+                                    0
+                                )
+                                start()
+                            }
+
                             mediaCodec.apply {
                                 configure(
                                     MediaFormat().apply {
@@ -102,6 +157,26 @@ class MainActivity : AppCompatActivity() {
                                         }
                                 Log.e("masterPlaylist", "masterPlaylist: $masterPlaylist")
 
+                                val audio = masterPlaylist.map {
+                                    it.alternateRenditions.find { it.type == Type.AUDIO && it.channels == 2 && it.language == "sv" }
+                                }.ok!!
+
+                                val audioLastPathSegment = audio.uri.lastPathSegment!!
+                                val audioBasePath = audioLastPathSegment.let { audio.uri.toString().removeSuffix(it) }
+
+                                val audioMediaPlaylist =
+                                    Uri.parse(audioBasePath)
+                                        .let { basePath ->
+                                            Log.e("CONNECT", "$basePath/$audioLastPathSegment")
+                                            client
+                                                .get<HttpResponse>(
+                                                    Uri.parse("$basePath/$audioLastPathSegment")
+                                                        .toString()
+                                                )
+                                                .receive<ByteReadChannel>()
+                                                .parseMediaPlaylistM3u(basePath)
+                                        }
+
                                 // Pick video by resolution
                                 // TODO: Pick by bandwidth and/or a combination
                                 val entry = masterPlaylist.ok!!.entries.minByOrNull { entry ->
@@ -117,6 +192,7 @@ class MainActivity : AppCompatActivity() {
                                 val mediaPlaylist =
                                     Uri.parse(basePath)
                                         .let { basePath ->
+                                            Log.e("CONNECT1", "$basePath/$lastPathSegment")
                                             client
                                                 .get<HttpResponse>(
                                                     Uri.parse("$basePath/$lastPathSegment")
@@ -125,6 +201,35 @@ class MainActivity : AppCompatActivity() {
                                                 .receive<ByteReadChannel>()
                                                 .parseMediaPlaylistM3u(basePath)
                                         }
+
+                                // TODO: This must be done in parallel with video below, use async {}
+                                audioMediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
+                                    .asFlow()
+                                    .map {
+                                        Log.e(MainActivity::class.java.simpleName, "Fetch $it")
+                                        val get: HttpResponse = client.get(it.toString())
+                                        val channel: ByteReadChannel = get.receive()
+                                        channel
+                                    }
+                                    .buffer()
+                                    .flatMapConcat {
+                                        it.aacFlow()
+                                    }
+                                    .collect { result ->
+                                        val packet = result.ok!!
+
+                                        audioBufferIndexChannel.receive { inputBuffer ->
+                                            inputBuffer.put(packet.data)
+
+                                            Duration.ofNanos(System.nanoTime())
+                                        }
+                                            .mapErr {
+                                                Log.e(
+                                                    MainActivity::class.java.simpleName,
+                                                    "buffer index: $it"
+                                                )
+                                            }
+                                    }
 
                                 mediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
                                     .asFlow()
