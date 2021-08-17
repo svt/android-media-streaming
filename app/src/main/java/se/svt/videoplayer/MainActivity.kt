@@ -26,6 +26,7 @@ import io.ktor.client.statement.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
@@ -200,92 +201,99 @@ class MainActivity : AppCompatActivity() {
                                         }
 
                                 // TODO: This must be done in parallel with video below, use async {}
-                                audioMediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
-                                    .asFlow()
-                                    .map {
-                                        Log.e(MainActivity::class.java.simpleName, "Fetch $it")
-                                        val get: HttpResponse = client.get(it.toString())
-                                        val channel: ByteReadChannel = get.receive()
-                                        channel
-                                    }
-                                    .buffer()
-                                    .flatMapConcat {
-                                        it.aacFlow()
-                                    }
-                                    .collect { result ->
-                                        val packet = result.ok!!
-
-                                        audioBufferIndexChannel.receive { inputBuffer ->
-                                            inputBuffer.put(packet.data)
-
-                                            Duration.ofNanos(System.nanoTime())
+                                val deferredAudio = async {
+                                    audioMediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
+                                        .asFlow()
+                                        .map {
+                                            Log.e(MainActivity::class.java.simpleName, "Fetch $it")
+                                            val get: HttpResponse = client.get(it.toString())
+                                            val channel: ByteReadChannel = get.receive()
+                                            channel
                                         }
-                                            .mapErr {
-                                                Log.e(
-                                                    MainActivity::class.java.simpleName,
-                                                    "buffer index: $it"
-                                                )
+                                        .buffer()
+                                        .flatMapConcat {
+                                            it.aacFlow()
+                                        }
+                                        .collect { result ->
+                                            val packet = result.ok!!
+
+                                            audioBufferIndexChannel.receive { inputBuffer ->
+                                                inputBuffer.put(packet.data)
+
+                                                Duration.ofNanos(System.nanoTime())
                                             }
-                                    }
-
-                                mediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
-                                    .asFlow()
-                                    .map {
-                                        Log.e(MainActivity::class.java.simpleName, "Fetch $it")
-                                        val get: HttpResponse = client.get(it.toString())
-                                        val channel: ByteReadChannel = get.receive()
-                                        channel
-                                    }
-                                    .buffer()
-                                    .flatMapConcat { channel ->
-                                        tsFlow(channel)
-                                            .buffer()
-                                            .mapNotNull { it.ok } // TODO: Handle errors
-                                            .streams()
-                                            .buffer()
-                                            .tsAsHls()
-                                            .buffer()
-                                    }
-                                    .mapNotNull { it.ok } // TODO: Handle errors
-                                    .buffer()
-                                    .collect { pes ->
-                                        bufferIndexChannel.receive { inputBuffer ->
-                                            inputBuffer.put(
-                                                // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
-                                                pes.byteReadChannel.readRemaining().run {
-                                                    ByteArray(remaining.toInt()).apply {
-                                                        readFully(this)
-                                                    }
-                                                })
-
-                                            val presentationTime = if (pes.pts != null) {
-                                                val lst = lastPresentationTime
-                                                val presentationTime = if (lst == null) {
-                                                    PresentationTime(
-                                                        pes.pts,
-                                                        Duration.ofNanos(System.nanoTime())
-                                                    )
-                                                } else {
-                                                    PresentationTime(
-                                                        pes.pts,
-                                                        lst.realTime + (pes.pts - lst.pts)
+                                                .mapErr {
+                                                    Log.e(
+                                                        MainActivity::class.java.simpleName,
+                                                        "buffer index: $it"
                                                     )
                                                 }
-                                                lastPresentationTime = presentationTime
-
-                                                presentationTime.realTime
-                                            } else
-                                                Duration.ofNanos(System.nanoTime())
-
-                                            presentationTime
                                         }
-                                            .mapErr {
-                                                Log.e(
-                                                    MainActivity::class.java.simpleName,
-                                                    "buffer index: $it"
-                                                )
+                                }
+
+                                val deferredVideo = async {
+                                    mediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
+                                        .asFlow()
+                                        .map {
+                                            Log.e(MainActivity::class.java.simpleName, "Fetch $it")
+                                            val get: HttpResponse = client.get(it.toString())
+                                            val channel: ByteReadChannel = get.receive()
+                                            channel
+                                        }
+                                        .buffer()
+                                        .flatMapConcat { channel ->
+                                            tsFlow(channel)
+                                                .buffer()
+                                                .mapNotNull { it.ok } // TODO: Handle errors
+                                                .streams()
+                                                .buffer()
+                                                .tsAsHls()
+                                                .buffer()
+                                        }
+                                        .mapNotNull { it.ok } // TODO: Handle errors
+                                        .buffer()
+                                        .collect { pes ->
+                                            bufferIndexChannel.receive { inputBuffer ->
+                                                inputBuffer.put(
+                                                    // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
+                                                    pes.byteReadChannel.readRemaining().run {
+                                                        ByteArray(remaining.toInt()).apply {
+                                                            readFully(this)
+                                                        }
+                                                    })
+
+                                                val presentationTime = if (pes.pts != null) {
+                                                    val lst = lastPresentationTime
+                                                    val presentationTime = if (lst == null) {
+                                                        PresentationTime(
+                                                            pes.pts,
+                                                            Duration.ofNanos(System.nanoTime())
+                                                        )
+                                                    } else {
+                                                        PresentationTime(
+                                                            pes.pts,
+                                                            lst.realTime + (pes.pts - lst.pts)
+                                                        )
+                                                    }
+                                                    lastPresentationTime = presentationTime
+
+                                                    presentationTime.realTime
+                                                } else
+                                                    Duration.ofNanos(System.nanoTime())
+
+                                                presentationTime
                                             }
-                                    }
+                                                .mapErr {
+                                                    Log.e(
+                                                        MainActivity::class.java.simpleName,
+                                                        "buffer index: $it"
+                                                    )
+                                                }
+                                        }
+                                }
+
+                                deferredAudio.await()
+                                deferredVideo.await()
                                 Log.e(MainActivity::class.java.simpleName, "Stream ended")
                             }
                         }
