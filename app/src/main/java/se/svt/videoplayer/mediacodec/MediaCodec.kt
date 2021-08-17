@@ -96,7 +96,12 @@ fun MediaCodec.videoInputBufferIndicesChannel() = VideoInputBufferIndicesChannel
             codec: MediaCodec,
             index: Int,
             info: MediaCodec.BufferInfo
-        ) = releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
+        ) = try {
+            releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
+        } catch (e: MediaCodec.CodecException) {
+            Log.e(MediaCodec::class.java.simpleName, "onOutputBufferAvailable", e)
+            Unit
+        }
 
         override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
             val result = trySend(Result.Error(Error.CodecException(e)))
@@ -125,13 +130,16 @@ fun MediaCodec.audioInputBufferIndicesChannel(
             codec: MediaCodec,
             index: Int,
             info: MediaCodec.BufferInfo
-        ) {
+        ) = try {
             codec.getOutputBuffer(index)?.let { byteBuffer ->
                 audioTrack.writeAllBlockingWithResult(byteBuffer).mapErr {
                     Log.e("MediaCodec", "writeAllBlockingWithResult = $it")
                 }
             }
             releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
+        } catch (e: MediaCodec.CodecException) {
+            Log.e(MediaCodec::class.java.simpleName, "onOutputBufferAvailable", e)
+            Unit
         }
 
         override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
