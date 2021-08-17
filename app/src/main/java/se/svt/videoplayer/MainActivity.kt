@@ -101,27 +101,29 @@ class MainActivity : AppCompatActivity() {
                                 play()
                             }
 
-                            val audioMediaCodec = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.Aac)?.name!!)
+                            val audioBufferIndexChannel = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.Aac)?.name!!)
+                                .run {
+                                    val bufferIndicesChannel = audioInputBufferIndicesChannel(audioTrack)
 
-                            val audioBufferIndexChannel = audioMediaCodec.audioInputBufferIndicesChannel(audioTrack)
-                            audioMediaCodec.apply {
-                                configure(
-                                    MediaFormat().apply {
-                                        setFloat("operating-rate", 48000.toFloat()/*packet.samplingFrequency.toFloat()*/) // TODO
-                                        setInteger("sample-rate", 48000/*packet.samplingFrequency*/) // TODO
-                                        setString("mime", "audio/mp4a-latm")
-                                        setInteger("channel-count", 2/*packet.channels*/) // TODO
-                                        setInteger("priority", 0)
-                                        // TODO: Look at "csd-" + i logic in ExoPlayer
-                                        // TODO: We have an audioSpecific config in the Aac packages, use it!
-                                        setByteBuffer("csd-0", ByteBuffer.wrap(byteArrayOf(17, -112)))
-                                    },
-                                    null,
-                                    null,
-                                    0
-                                )
-                                start()
-                            }
+                                    configure(
+                                        MediaFormat().apply {
+                                            setFloat("operating-rate", 48000.toFloat()/*packet.samplingFrequency.toFloat()*/) // TODO
+                                            setInteger("sample-rate", 48000/*packet.samplingFrequency*/) // TODO
+                                            setString("mime", "audio/mp4a-latm")
+                                            setInteger("channel-count", 2/*packet.channels*/) // TODO
+                                            setInteger("priority", 0)
+                                            // TODO: Look at "csd-" + i logic in ExoPlayer
+                                            // TODO: We have an audioSpecific config in the Aac packages, use it!
+                                            setByteBuffer("csd-0", ByteBuffer.wrap(byteArrayOf(17, -112)))
+                                        },
+                                        null,
+                                        null,
+                                        0
+                                    )
+                                    start()
+
+                                    bufferIndicesChannel
+                                }
 
                             mediaCodec.apply {
                                 configure(
