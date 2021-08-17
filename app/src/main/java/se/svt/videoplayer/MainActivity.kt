@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import se.svt.videoplayer.cache.SingleElementCache
 import se.svt.videoplayer.container.aac.aacFlow
 import se.svt.videoplayer.container.ts.streams.streams
 import se.svt.videoplayer.container.ts.tsFlow
@@ -98,67 +99,70 @@ class MainActivity : AppCompatActivity() {
                             // TODO: Don't redo all the work when we get a new surface
                             // TODO: Note that we need to recreate the codec though
 
-                            val videoBufferIndexChannel = MediaCodec.createByCodecName(
-                                mediaCodecInfoFromFormat(codecInfos, Format.H264).ok!!.name
-                            )
-                                .run {
-                                    val bufferIndicesChannel = videoInputBufferIndicesChannel()
-                                    configure(
-                                        MediaFormat().apply {
-                                            setString(KEY_MIME, Format.H264.mimeType)
-                                            setInteger(KEY_WIDTH, 1280)
-                                            setInteger(KEY_HEIGHT, 720)
-                                        },
-                                        surfaceHolderConfiguration.surfaceHolder.surface,
-                                        null,
-                                        0
-                                    )
+                            val videoBufferIndexChannelProvider = SingleElementCache { _: Int ->
+                                MediaCodec.createByCodecName(
+                                    mediaCodecInfoFromFormat(codecInfos, Format.H264).ok!!.name
+                                )
+                                    .run {
+                                        val bufferIndicesChannel = videoInputBufferIndicesChannel()
+                                        configure(
+                                            MediaFormat().apply {
+                                                setString(KEY_MIME, Format.H264.mimeType)
+                                                setInteger(KEY_WIDTH, 1280)
+                                                setInteger(KEY_HEIGHT, 720)
+                                            },
+                                            surfaceHolderConfiguration.surfaceHolder.surface,
+                                            null,
+                                            0
+                                        )
 
-                                    start()
+                                        start()
 
-                                    bufferIndicesChannel
-                                }
+                                        bufferIndicesChannel
+                                    }
+                            }
+                            val audioBufferIndexChannelProvider = SingleElementCache { _: Int ->
+                                MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).ok!!.name)
+                                    .run {
+                                        val bufferIndicesChannel =
+                                            audioInputBufferIndicesChannel(AudioTrack(
+                                                AudioAttributes.Builder()
+                                                    .setUsage(USAGE_MEDIA)
+                                                    .setContentType(CONTENT_TYPE_UNKNOWN)
+                                                    .setFlags(0)
+                                                    .build(),
+                                                AudioFormat.Builder()
+                                                    .setSampleRate(/*packet.samplingFrequency*/48000) // TODO
+                                                    .setChannelMask(12) // TODO
+                                                    .setEncoding(ENCODING_PCM_16BIT) // TODO
+                                                    .build(),
+                                                /*packet.samplingFrequency*/48000, // TODO
+                                                MODE_STREAM,
+                                                AUDIO_SESSION_ID_GENERATE
+                                            ).apply {
+                                                play()
+                                            })
 
-                            val audioBufferIndexChannel = MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).ok!!.name)
-                                .run {
-                                    val bufferIndicesChannel =
-                                        audioInputBufferIndicesChannel(AudioTrack(
-                                            AudioAttributes.Builder()
-                                                .setUsage(USAGE_MEDIA)
-                                                .setContentType(CONTENT_TYPE_UNKNOWN)
-                                                .setFlags(0)
-                                                .build(),
-                                            AudioFormat.Builder()
-                                                .setSampleRate(/*packet.samplingFrequency*/48000) // TODO
-                                                .setChannelMask(12) // TODO
-                                                .setEncoding(ENCODING_PCM_16BIT) // TODO
-                                                .build(),
-                                            /*packet.samplingFrequency*/48000, // TODO
-                                            MODE_STREAM,
-                                            AUDIO_SESSION_ID_GENERATE
-                                        ).apply {
-                                            play()
-                                        })
+                                        configure(
+                                            MediaFormat().apply {
+                                                setFloat(KEY_OPERATING_RATE, 48000.toFloat()/*packet.samplingFrequency.toFloat()*/) // TODO
+                                                setInteger(KEY_SAMPLE_RATE, 48000/*packet.samplingFrequency*/) // TODO
+                                                setString(KEY_MIME, Format.Aac.mimeType)
+                                                setInteger(KEY_CHANNEL_COUNT, 2/*packet.channels*/) // TODO
+                                                setInteger(KEY_PRIORITY, 0 /* realtime */)
+                                                // TODO: Look at "csd-" + i logic in ExoPlayer
+                                                // TODO: We have an audioSpecific config in the Aac packages, use it!
+                                                setByteBuffer("csd-0", ByteBuffer.wrap(byteArrayOf(17, -112)))
+                                            },
+                                            null,
+                                            null,
+                                            0
+                                        )
+                                        start()
 
-                                    configure(
-                                        MediaFormat().apply {
-                                            setFloat(KEY_OPERATING_RATE, 48000.toFloat()/*packet.samplingFrequency.toFloat()*/) // TODO
-                                            setInteger(KEY_SAMPLE_RATE, 48000/*packet.samplingFrequency*/) // TODO
-                                            setString(KEY_MIME, Format.Aac.mimeType)
-                                            setInteger(KEY_CHANNEL_COUNT, 2/*packet.channels*/) // TODO
-                                            setInteger(KEY_PRIORITY, 0 /* realtime */)
-                                            // TODO: Look at "csd-" + i logic in ExoPlayer
-                                            // TODO: We have an audioSpecific config in the Aac packages, use it!
-                                            setByteBuffer("csd-0", ByteBuffer.wrap(byteArrayOf(17, -112)))
-                                        },
-                                        null,
-                                        null,
-                                        0
-                                    )
-                                    start()
-
-                                    bufferIndicesChannel
-                                }
+                                        bufferIndicesChannel
+                                    }
+                            }
 
                             withContext(Dispatchers.IO) {
                                 val masterPlaylist = MANIFEST_URL
@@ -210,7 +214,7 @@ class MainActivity : AppCompatActivity() {
                                             packetResult
                                                 .mapErr(Error::Aac)
                                                 .andThen { packet ->
-                                                    audioBufferIndexChannel.receive { inputBuffer ->
+                                                    audioBufferIndexChannelProvider.get(0).receive { inputBuffer ->
                                                         inputBuffer.put(packet.data)
 
                                                         Duration.ofNanos(System.nanoTime())
@@ -246,36 +250,37 @@ class MainActivity : AppCompatActivity() {
                                         .mapNotNull { it.ok } // TODO: Handle errors
                                         .buffer()
                                         .collect { pes ->
-                                            videoBufferIndexChannel.receive { inputBuffer ->
-                                                inputBuffer.put(
-                                                    // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
-                                                    pes.byteReadChannel.readRemaining().run {
-                                                        ByteArray(remaining.toInt()).apply {
-                                                            readFully(this)
+                                            videoBufferIndexChannelProvider.get(0)
+                                                .receive { inputBuffer ->
+                                                    inputBuffer.put(
+                                                        // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
+                                                        pes.byteReadChannel.readRemaining().run {
+                                                            ByteArray(remaining.toInt()).apply {
+                                                                readFully(this)
+                                                            }
+                                                        })
+
+                                                    val presentationTime = if (pes.pts != null) {
+                                                        val lst = lastPresentationTime
+                                                        val presentationTime = if (lst == null) {
+                                                            PresentationTime(
+                                                                pes.pts,
+                                                                Duration.ofNanos(System.nanoTime())
+                                                            )
+                                                        } else {
+                                                            PresentationTime(
+                                                                pes.pts,
+                                                                lst.realTime + (pes.pts - lst.pts)
+                                                            )
                                                         }
-                                                    })
+                                                        lastPresentationTime = presentationTime
 
-                                                val presentationTime = if (pes.pts != null) {
-                                                    val lst = lastPresentationTime
-                                                    val presentationTime = if (lst == null) {
-                                                        PresentationTime(
-                                                            pes.pts,
-                                                            Duration.ofNanos(System.nanoTime())
-                                                        )
-                                                    } else {
-                                                        PresentationTime(
-                                                            pes.pts,
-                                                            lst.realTime + (pes.pts - lst.pts)
-                                                        )
-                                                    }
-                                                    lastPresentationTime = presentationTime
+                                                        presentationTime.realTime
+                                                    } else
+                                                        Duration.ofNanos(System.nanoTime())
 
-                                                    presentationTime.realTime
-                                                } else
-                                                    Duration.ofNanos(System.nanoTime())
-
-                                                presentationTime
-                                            }
+                                                    presentationTime
+                                                }
                                                 .mapErr {
                                                     Log.e(
                                                         MainActivity::class.java.simpleName,
