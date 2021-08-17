@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import se.svt.videoplayer.Result
 import se.svt.videoplayer.andThen
+import se.svt.videoplayer.duration.durationOfMicros
 import se.svt.videoplayer.map
 import se.svt.videoplayer.mapErr
 import se.svt.videoplayer.okOr
@@ -77,7 +78,7 @@ suspend fun ByteReadChannel.aacFlow() = try {
         .andThen { (if (it is Frame.Priv) it.data else null).okOr(Error.ExpectedPrivFrame) }
         .andThen { it.takeIf { it.size == 8 }.okOr(Error.Expected8OctetTimestamp) }
         .map { ByteReadChannel(it).readLong() and 0x1FFFFFFFFL }
-        .map { Duration.ofNanos(TimeUnit.MICROSECONDS.toNanos(it)) }
+        .map(::durationOfMicros)
 } catch (e: ClosedReceiveChannelException) {
     Result.Error(Error.EofBeforeTimestamp)
 }.map { timestamp ->
