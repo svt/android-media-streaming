@@ -54,34 +54,36 @@ class InputBufferIndicesChannel(
     }
 }
 
+private abstract class Callback(private val inputBufferIndicesChannel: Channel<Result<Int, Error>>) : MediaCodec.Callback() {
+    final override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+        val result = inputBufferIndicesChannel.trySend(Result.Success(index))
+        if (result.isFailure)
+            Log.e(MediaCodec::class.java.simpleName, "onInputBufferAvailable trySend failed: $result")
+    }
+
+    final override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+        val result = inputBufferIndicesChannel.trySend(Result.Error(Error.CodecException(e)))
+        if (result.isFailure)
+            Log.e(MediaCodec::class.java.simpleName, "onError trySend failed: $result")
+    }
+
+    final override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+        Log.e(MediaCodec::class.java.simpleName, "onOutputFormatChanged: $format")
+    }
+}
+
 @ExperimentalCoroutinesApi
 fun MediaCodec.videoInputBufferIndicesChannel() = InputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
-    setCallback(object : MediaCodec.Callback() {
-        override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-            val result = trySend(Result.Success(index))
-            if (result.isFailure)
-                Log.e(MediaCodec::class.java.simpleName, "onInputBufferAvailable trySend failed: $result")
-        }
-
+    setCallback(object : Callback(this) {
         override fun onOutputBufferAvailable(
             codec: MediaCodec,
             index: Int,
             info: MediaCodec.BufferInfo
         ) = try {
-            releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
+            codec.releaseOutputBuffer(index, TimeUnit.MICROSECONDS.toNanos(info.presentationTimeUs))
         } catch (e: MediaCodec.CodecException) {
             Log.e(MediaCodec::class.java.simpleName, "onOutputBufferAvailable", e)
             Unit
-        }
-
-        override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-            val result = trySend(Result.Error(Error.CodecException(e)))
-            if (result.isFailure)
-                Log.e(MediaCodec::class.java.simpleName, "onError trySend failed: $result")
-        }
-
-        override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-            Log.e(MediaCodec::class.java.simpleName, "onOutputFormatChanged: $format")
         }
     })
 })
@@ -90,13 +92,7 @@ fun MediaCodec.videoInputBufferIndicesChannel() = InputBufferIndicesChannel(this
 fun MediaCodec.audioInputBufferIndicesChannel(
     audioTrack: AudioTrack
 ) = InputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
-    setCallback(object : MediaCodec.Callback() {
-        override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-            val result = trySend(Result.Success(index))
-            if (result.isFailure)
-                Log.e(MediaCodec::class.java.simpleName, "onInputBufferAvailable trySend failed: $result")
-        }
-
+    setCallback(object : Callback(this) {
         override fun onOutputBufferAvailable(
             codec: MediaCodec,
             index: Int,
@@ -111,16 +107,6 @@ fun MediaCodec.audioInputBufferIndicesChannel(
         } catch (e: MediaCodec.CodecException) {
             Log.e(MediaCodec::class.java.simpleName, "onOutputBufferAvailable", e)
             Unit
-        }
-
-        override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-            val result = trySend(Result.Error(Error.CodecException(e)))
-            if (result.isFailure)
-                Log.e(MediaCodec::class.java.simpleName, "onError trySend failed: $result")
-        }
-
-        override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-            Log.e(MediaCodec::class.java.simpleName, "onOutputFormatChanged: $format")
         }
     })
 })
