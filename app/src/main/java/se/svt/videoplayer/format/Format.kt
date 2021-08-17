@@ -3,11 +3,12 @@ package se.svt.videoplayer.format
 import se.svt.videoplayer.container.ts.pmt.Stream
 
 enum class Format(val mimeType: String) {
-    H264("video/avc")
+    H264("video/avc"),
+    Aac("audio/mp4a-latm"),
 }
 
 fun Stream.toFormat() = when (this) {
-    Stream.AacAdts -> TODO()
+    Stream.AacAdts -> Format.Aac
     Stream.AacLatm -> TODO()
     Stream.Ac3 -> TODO()
     Stream.Ac4 -> TODO()

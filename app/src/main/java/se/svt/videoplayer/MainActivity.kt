@@ -103,7 +103,7 @@ class MainActivity : AppCompatActivity() {
                                 play()
                             }
 
-                            val audioMediaCodec = MediaCodec.createByCodecName("OMX.google.aac.decoder")
+                            val audioMediaCodec = MediaCodec.createByCodecName(codecFromFormat(codecInfos, Format.Aac)?.name!!)
 
                             val audioBufferIndexChannel = audioMediaCodec.audioInputBufferIndicesChannel(audioTrack)
                             audioMediaCodec.apply {
