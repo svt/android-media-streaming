@@ -49,7 +49,6 @@ import se.svt.videoplayer.streaming.hls.m3u.media.parseMediaPlaylistM3u
 import se.svt.videoplayer.streaming.hls.tsAsHls
 import se.svt.videoplayer.surface.surfaceHolderConfigurationFlow
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.time.Duration
 import kotlin.math.absoluteValue
 
@@ -212,7 +211,8 @@ class MainActivity : AppCompatActivity() {
                                         }
                                         .buffer()
                                         .flatMapConcat {
-                                            it.aacFlow()
+                                            // TODO: errors and use timestamp
+                                            it.aacFlow().ok!!.flow
                                         }
                                         .collect { result ->
                                             val packet = result.ok!!
