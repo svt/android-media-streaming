@@ -23,6 +23,7 @@ import android.media.MediaFormat.KEY_SAMPLE_RATE
 import android.media.MediaFormat.KEY_WIDTH
 import android.net.Uri
 import android.os.Build
+import android.os.Build.VERSION.SDK_INT
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -176,7 +177,20 @@ class MainActivity : AppCompatActivity() {
                                                 .build(),
                                             AudioFormat.Builder()
                                                 .setSampleRate(audioMediaCodecArguments.samplingFrequency)
-                                                .setChannelMask(12) // TODO
+                                                .setChannelMask(when (audioMediaCodecArguments.channels) {
+                                                    1 -> AudioFormat.CHANNEL_OUT_MONO
+                                                    2 -> AudioFormat.CHANNEL_OUT_STEREO
+                                                    3 -> AudioFormat.CHANNEL_OUT_STEREO or AudioFormat.CHANNEL_OUT_FRONT_CENTER
+                                                    4 -> AudioFormat.CHANNEL_OUT_QUAD
+                                                    5 -> AudioFormat.CHANNEL_OUT_QUAD or AudioFormat.CHANNEL_OUT_FRONT_CENTER
+                                                    6 -> AudioFormat.CHANNEL_OUT_5POINT1
+                                                    7 -> AudioFormat.CHANNEL_OUT_5POINT1 or AudioFormat.CHANNEL_OUT_BACK_CENTER
+                                                    8 -> if (SDK_INT >= 23)
+                                                        AudioFormat.CHANNEL_OUT_7POINT1_SURROUND
+                                                    else
+                                                        AudioFormat.CHANNEL_OUT_5POINT1 or AudioFormat.CHANNEL_OUT_SIDE_LEFT or AudioFormat.CHANNEL_OUT_SIDE_RIGHT
+                                                    else -> AudioFormat.CHANNEL_INVALID
+                                                })
                                                 .setEncoding(ENCODING_PCM_16BIT) // TODO
                                                 .build(),
                                             audioMediaCodecArguments.samplingFrequency,
