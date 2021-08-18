@@ -100,11 +100,11 @@ class MainActivity : AppCompatActivity() {
 
                             withContext(Dispatchers.IO) {
                                 val masterPlaylist = MANIFEST_URL
-                                    .let { masterPlaylistUrl ->
+                                    .let { uri ->
                                         client
-                                            .get<HttpResponse>(masterPlaylistUrl.toString())
+                                            .get<HttpResponse>(uri.toString())
                                             .receive<ByteReadChannel>()
-                                            .parseMasterPlaylistM3u(masterPlaylistUrl.removeLastPathSegmentIfAny())
+                                            .parseMasterPlaylistM3u(uri.removeLastPathSegmentIfAny())
                                     }
 
                                 val audioMediaPlaylist = masterPlaylist
