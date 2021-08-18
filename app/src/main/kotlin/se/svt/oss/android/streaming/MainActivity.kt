@@ -124,19 +124,21 @@ class MainActivity : AppCompatActivity() {
                                     }
 
                                 // TODO: Pick by bandwidth and/or a combination
-                                val videoMediaPlaylist = masterPlaylist.orThrow().entries.minByOrNull { entry ->
-                                    entry.resolution?.let { (width, height) ->
-                                        (width - surfaceHolderConfiguration.width).absoluteValue + (height - surfaceHolderConfiguration.height).absoluteValue
-                                    } ?: Int.MAX_VALUE
-                                }
-                                    .okOr(Error.NoEntryFound)
-                                    .andThen { entry ->
-                                        client
-                                            .get<HttpResponse>(entry.uri.toString())
-                                            .receive<ByteReadChannel>()
-                                            .parseMediaPlaylistM3u(entry.uri.removeLastPathSegmentIfAny())
-                                            .mapErr(Error::HlsM3uMedia)
+                                val videoMediaPlaylist = masterPlaylist.andThen {
+                                    it.entries.minByOrNull { entry ->
+                                        entry.resolution?.let { (width, height) ->
+                                            (width - surfaceHolderConfiguration.width).absoluteValue + (height - surfaceHolderConfiguration.height).absoluteValue
+                                        } ?: Int.MAX_VALUE
                                     }
+                                        .okOr(Error.NoEntryFound)
+                                        .andThen { entry ->
+                                            client
+                                                .get<HttpResponse>(entry.uri.toString())
+                                                .receive<ByteReadChannel>()
+                                                .parseMediaPlaylistM3u(entry.uri.removeLastPathSegmentIfAny())
+                                                .mapErr(Error::HlsM3uMedia)
+                                        }
+                                }
 
                                 // TODO: This must be done in parallel with video below, use async {}
                                 val deferredAudio = async {
@@ -207,36 +209,37 @@ class MainActivity : AppCompatActivity() {
                                                 1280,
                                                 720
                                             ))
-                                                .orThrow() // TODO: Handle error
-                                                .receive { inputBuffer ->
-                                                    inputBuffer.put(
-                                                        // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
-                                                        pes.byteReadChannel.readRemaining().run {
-                                                            ByteArray(remaining.toInt()).apply {
-                                                                readFully(this)
+                                                .andThen {
+                                                    it.receive { inputBuffer ->
+                                                        inputBuffer.put(
+                                                            // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
+                                                            pes.byteReadChannel.readRemaining().run {
+                                                                ByteArray(remaining.toInt()).apply {
+                                                                    readFully(this)
+                                                                }
+                                                            })
+
+                                                        val presentationTime = if (pes.pts != null) {
+                                                            val lst = lastPresentationTime
+                                                            val presentationTime = if (lst == null) {
+                                                                PresentationTime(
+                                                                    pes.pts,
+                                                                    Duration.ofNanos(System.nanoTime())
+                                                                )
+                                                            } else {
+                                                                PresentationTime(
+                                                                    pes.pts,
+                                                                    lst.realTime + (pes.pts - lst.pts)
+                                                                )
                                                             }
-                                                        })
+                                                            lastPresentationTime = presentationTime
 
-                                                    val presentationTime = if (pes.pts != null) {
-                                                        val lst = lastPresentationTime
-                                                        val presentationTime = if (lst == null) {
-                                                            PresentationTime(
-                                                                pes.pts,
-                                                                Duration.ofNanos(System.nanoTime())
-                                                            )
-                                                        } else {
-                                                            PresentationTime(
-                                                                pes.pts,
-                                                                lst.realTime + (pes.pts - lst.pts)
-                                                            )
-                                                        }
-                                                        lastPresentationTime = presentationTime
+                                                            presentationTime.realTime
+                                                        } else
+                                                            Duration.ofNanos(System.nanoTime())
 
-                                                        presentationTime.realTime
-                                                    } else
-                                                        Duration.ofNanos(System.nanoTime())
-
-                                                    presentationTime
+                                                        presentationTime
+                                                    }
                                                 }
                                                 .mapErr {
                                                     Log.e(
