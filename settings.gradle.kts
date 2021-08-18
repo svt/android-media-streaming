@@ -1,2 +1,2 @@
 rootProject.name = "VideoPlayer"
-include ':app'
+include(":app")
