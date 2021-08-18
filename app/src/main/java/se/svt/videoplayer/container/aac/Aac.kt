@@ -13,14 +13,18 @@ import se.svt.videoplayer.okOr
 import se.svt.videoplayer.okOrElse
 import se.svt.videoplayer.streaming.hls.audio.Frame
 import se.svt.videoplayer.streaming.hls.audio.id3
+import java.lang.Exception
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 import se.svt.videoplayer.streaming.hls.audio.Error as Id3Error
 
-sealed class Error {
+sealed class Error : Exception {
+    constructor() : super()
+    constructor(exception: Exception) : super(exception)
+
     object ExpectedSync : Error()
     data class UnknownSamplingFrequencyIndex(val index: Int): Error()
-    data class Id3(val error: Id3Error) : Error()
+    data class Id3(val error: Id3Error) : Error(error)
     object MissingId3TimestampFrame : Error()
     object ExpectedPrivFrame: Error()
     object Expected8OctetTimestamp : Error()

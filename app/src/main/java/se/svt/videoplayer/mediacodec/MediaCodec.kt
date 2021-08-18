@@ -13,12 +13,16 @@ import se.svt.videoplayer.audiotrack.writeAllBlockingWithResult
 import se.svt.videoplayer.format.Format
 import se.svt.videoplayer.mapErr
 import se.svt.videoplayer.okOrElse
+import java.lang.Exception
 import java.nio.ByteBuffer
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 
-sealed class Error {
-    data class CodecException(val exception: MediaCodec.CodecException) : Error()
+sealed class Error: Exception {
+    constructor() : super()
+    constructor(exception: Exception) : super(exception)
+
+    data class CodecException(val exception: MediaCodec.CodecException) : Error(exception)
     data class NullInputBuffer(val index: Int) : Error()
     data class NoCodecForFormat(val format: Format) : Error()
 }

@@ -64,6 +64,7 @@ import java.time.Duration
 import kotlin.math.absoluteValue
 import se.svt.videoplayer.container.aac.Error as AacError
 import se.svt.videoplayer.mediacodec.Error as MediaCodecError
+import se.svt.videoplayer.streaming.hls.m3u.master.Error as HlsM3uMasterError
 
 // https://api.svt.se/video/ewAdr96
 private val MANIFEST_URL =
@@ -74,12 +75,17 @@ data class PresentationTime(
     val realTime: Duration,
 )
 
-sealed class Error {
-    data class Aac(val error: AacError) : Error()
-    data class MediaCodec(val error: MediaCodecError) : Error()
+sealed class Error : Exception {
+    constructor() : super()
+    constructor(exception: java.lang.Exception) : super(exception)
+
+    data class Aac(val error: AacError) : Error(error)
+    data class MediaCodec(val error: MediaCodecError) : Error(error)
     object AudioTrackUninitialized : Error()
     object AudioTrackNoStaticData : Error()
     data class AudioTrackUnknownState(val state: Int) : Error()
+    object NoAlternateRenditionFound : Error()
+    data class HlsM3uMaster(val error: HlsM3uMasterError) : Error(error)
 }
 
 class MainActivity : AppCompatActivity() {
@@ -112,7 +118,7 @@ class MainActivity : AppCompatActivity() {
                             )
                             val videoBufferIndexChannelProvider = SingleElementCache { videoMediaCodecArguments: VideoMediaCodecArguments ->
                                 MediaCodec.createByCodecName(
-                                    mediaCodecInfoFromFormat(codecInfos, videoMediaCodecArguments.format).ok!!.name
+                                    mediaCodecInfoFromFormat(codecInfos, videoMediaCodecArguments.format).orThrow().name
                                 )
                                     .run {
                                         val bufferIndicesChannel = videoInputBufferIndicesChannel()
@@ -160,7 +166,7 @@ class MainActivity : AppCompatActivity() {
                                 }
                             }
                             val audioBufferIndexChannelProvider = SingleElementCache { audioMediaCodecArguments: AudioMediaCodecArguments ->
-                                MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).ok!!.name)
+                                MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).orThrow().name)
                                     .run {
                                         val audioTrackResult = AudioTrack(
                                             AudioAttributes.Builder()
@@ -192,7 +198,7 @@ class MainActivity : AppCompatActivity() {
                                         audioTrackResult.map { it.play() }
 
                                         val bufferIndicesChannel =
-                                            audioInputBufferIndicesChannel(audioTrackResult.ok!!) // TODO: Handle error
+                                            audioInputBufferIndicesChannel(audioTrackResult.orThrow()) // TODO: Handle error
 
                                         configure(
                                             MediaFormat().apply {
@@ -224,17 +230,22 @@ class MainActivity : AppCompatActivity() {
                                             .parseMasterPlaylistM3u(masterPlaylistUrl.removeLastPathSegmentIfAny())
                                     }
 
-                                val audioMediaPlaylist = masterPlaylist.map { playlist ->
-                                    playlist.alternateRenditions.find { it.type == Type.AUDIO && it.channels == 2 && it.language == "sv" }
-                                }.ok!!.let { audio ->
-                                    client
-                                        .get<HttpResponse>(audio.uri.toString())
-                                        .receive<ByteReadChannel>()
-                                        .parseMediaPlaylistM3u(audio.uri.removeLastPathSegmentIfAny())
+                                val audioMediaPlaylist = masterPlaylist
+                                    .mapErr(Error::HlsM3uMaster)
+                                    .andThen { playlist ->
+                                        playlist.alternateRenditions.find { it.type == Type.AUDIO && it.channels == 2 && it.language == "sv" }
+                                            .okOr(Error.NoAlternateRenditionFound)
                                 }
+                                    .orThrow()
+                                    .let { audio ->
+                                        client
+                                            .get<HttpResponse>(audio.uri.toString())
+                                            .receive<ByteReadChannel>()
+                                            .parseMediaPlaylistM3u(audio.uri.removeLastPathSegmentIfAny())
+                                    }
 
                                 // TODO: Pick by bandwidth and/or a combination
-                                val videoMediaPlaylist = masterPlaylist.ok!!.entries.minByOrNull { entry ->
+                                val videoMediaPlaylist = masterPlaylist.orThrow().entries.minByOrNull { entry ->
                                     // TODO: Don't crash
                                     entry.resolution!!.let { (width, height) ->
                                         (width - surfaceHolderConfiguration.width).absoluteValue + (height - surfaceHolderConfiguration.height).absoluteValue
@@ -248,7 +259,7 @@ class MainActivity : AppCompatActivity() {
 
                                 // TODO: This must be done in parallel with video below, use async {}
                                 val deferredAudio = async {
-                                    audioMediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
+                                    audioMediaPlaylist.orThrow().entries.map { it.uri } // TODO: Handle errors
                                         .asFlow()
                                         .map {
                                             Log.e(MainActivity::class.java.simpleName, "Audio fetch $it")
@@ -259,7 +270,7 @@ class MainActivity : AppCompatActivity() {
                                         .buffer()
                                         .flatMapConcat {
                                             // TODO: errors and use timestamp
-                                            it.aacFlow().ok!!.flow
+                                            it.aacFlow().orThrow().flow
                                         }
                                         .collect { packetResult ->
                                             packetResult
@@ -284,7 +295,7 @@ class MainActivity : AppCompatActivity() {
                                 }
 
                                 val deferredVideo = async {
-                                    videoMediaPlaylist.ok!!.entries.map { it.uri } // TODO: Handle errors
+                                    videoMediaPlaylist.orThrow().entries.map { it.uri } // TODO: Handle errors
                                         .asFlow()
                                         .map {
                                             Log.e(MainActivity::class.java.simpleName, "Fetch $it")

@@ -5,6 +5,7 @@ import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import se.svt.videoplayer.Result
 import se.svt.videoplayer.andThen
 import se.svt.videoplayer.map
+import java.lang.Exception
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 
@@ -14,7 +15,7 @@ sealed class Version {
     data class V4(val minor: Int) : Version()
 }
 
-sealed class Error {
+sealed class Error : Exception() {
     object InvalidId3Header : Error()
     object CompressedVersion2 : Error()
     data class UnsupportedVersion(val major: Int, val minor: Int) : Error()

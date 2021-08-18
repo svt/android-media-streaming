@@ -6,6 +6,7 @@ import se.svt.videoplayer.Result
 import se.svt.videoplayer.duration.durationOfDoubleSeconds
 import se.svt.videoplayer.streaming.hls.m3u.BasicTag
 import se.svt.videoplayer.streaming.hls.m3u.urlRegex
+import java.lang.Exception
 import java.time.Duration
 
 data class Entry(
@@ -22,7 +23,7 @@ data class Playlist(
     val entries: List<Entry>
 )
 
-sealed class Error {
+sealed class Error : Exception() {
     object MissingHeader : Error()
     data class InvalidPlaylistType(val type: String) : Error()
     object MissingDuration : Error()

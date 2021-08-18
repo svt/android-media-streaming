@@ -7,6 +7,7 @@ import se.svt.videoplayer.collect
 import se.svt.videoplayer.map
 import se.svt.videoplayer.streaming.hls.m3u.BasicTag
 import se.svt.videoplayer.streaming.hls.m3u.urlRegex
+import java.lang.Exception
 
 data class AlternateRendition(
     val type: Type,
@@ -33,7 +34,7 @@ data class Playlist(
     val entries: List<Entry>,
 )
 
-sealed class Error {
+sealed class Error : Exception() {
     object MissingHeader : Error()
     data class KeyValues(val input: String): Error()
 }
