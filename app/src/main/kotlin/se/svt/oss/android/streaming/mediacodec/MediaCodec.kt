@@ -15,16 +15,19 @@ import se.svt.oss.android.streaming.audiotrack.writeAllBlockingWithResult
 import se.svt.oss.android.streaming.format.Format
 import se.svt.oss.android.streaming.mapErr
 import se.svt.oss.android.streaming.okOrElse
+import se.svt.oss.android.streaming.orThrow
+import se.svt.oss.android.streaming.surface.SurfaceHolderConfiguration
 import java.nio.ByteBuffer
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 import se.svt.oss.android.streaming.audio.Arguments as AudioArguments
+import se.svt.oss.android.streaming.video.Arguments as VideoArguments
 
 sealed class Error: Exception {
     constructor() : super()
     constructor(exception: Exception) : super(exception)
 
-    data class CodecException(val exception: MediaCodec.CodecException) : Error(exception)
+    data class Codec(val exception: MediaCodec.CodecException) : Error(exception)
     data class NullInputBuffer(val index: Int) : Error()
     data class NoCodecForFormat(val format: Format) : Error()
 }
@@ -52,7 +55,7 @@ class InputBufferIndicesChannel(
                     Result.Success(Unit)
                 }
         } catch (e: MediaCodec.CodecException) {
-            Result.Error(Error.CodecException(e))
+            Result.Error(Error.Codec(e))
         } catch (e: IllegalStateException) {
             Log.e("MediaCodec", "receive", e)
             Result.Success(Unit)
@@ -68,7 +71,7 @@ private abstract class Callback(private val inputBufferIndicesChannel: Channel<R
     }
 
     final override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-        val result = inputBufferIndicesChannel.trySend(Result.Error(Error.CodecException(e)))
+        val result = inputBufferIndicesChannel.trySend(Result.Error(Error.Codec(e)))
         if (result.isFailure)
             Log.e(MediaCodec::class.java.simpleName, "onError trySend failed: $result")
     }
@@ -151,7 +154,35 @@ fun mediaCodec(codecInfos: Array<MediaCodecInfo>, audioArguments: AudioArguments
                     start()
                     Result.Success(bufferIndicesChannel)
                 } catch (e: MediaCodec.CodecException) {
-                    Result.Error(Error.CodecException(e))
+                    Result.Error(Error.Codec(e))
                 }
             }
+    }
+
+fun mediaCodec(
+    codecInfos: Array<MediaCodecInfo>,
+    videoMediaCodecArguments: VideoArguments,
+    surfaceHolderConfiguration: SurfaceHolderConfiguration
+): Result<InputBufferIndicesChannel, Error> = MediaCodec.createByCodecName(
+    mediaCodecInfoFromFormat(codecInfos, videoMediaCodecArguments.format).orThrow().name
+)
+    .run {
+        val bufferIndicesChannel = videoInputBufferIndicesChannel()
+        try {
+            configure(
+                MediaFormat().apply {
+                    setString(MediaFormat.KEY_MIME, videoMediaCodecArguments.format.mimeType)
+                    setInteger(MediaFormat.KEY_WIDTH, videoMediaCodecArguments.width)
+                    setInteger(MediaFormat.KEY_HEIGHT, videoMediaCodecArguments.height)
+                },
+                surfaceHolderConfiguration.surfaceHolder.surface,
+                null,
+                0
+            )
+
+            start()
+            Result.Success(bufferIndicesChannel)
+        } catch (e: MediaCodec.CodecException) {
+            Result.Error(Error.Codec(e))
+        }
     }

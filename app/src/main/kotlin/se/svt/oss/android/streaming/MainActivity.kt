@@ -1,11 +1,6 @@
 package se.svt.oss.android.streaming
 
-import android.media.MediaCodec
 import android.media.MediaCodecList
-import android.media.MediaFormat
-import android.media.MediaFormat.KEY_HEIGHT
-import android.media.MediaFormat.KEY_MIME
-import android.media.MediaFormat.KEY_WIDTH
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -38,8 +33,6 @@ import se.svt.oss.android.streaming.container.ts.tsFlow
 import se.svt.oss.android.streaming.databinding.ActivityMainBinding
 import se.svt.oss.android.streaming.format.Format
 import se.svt.oss.android.streaming.mediacodec.mediaCodec
-import se.svt.oss.android.streaming.mediacodec.mediaCodecInfoFromFormat
-import se.svt.oss.android.streaming.mediacodec.videoInputBufferIndicesChannel
 import se.svt.oss.android.streaming.streaming.hls.m3u.master.Type
 import se.svt.oss.android.streaming.streaming.hls.m3u.master.parseMasterPlaylistM3u
 import se.svt.oss.android.streaming.streaming.hls.m3u.media.parseMediaPlaylistM3u
@@ -48,9 +41,11 @@ import se.svt.oss.android.streaming.surface.surfaceHolderConfigurationFlow
 import java.time.Duration
 import kotlin.math.absoluteValue
 import se.svt.oss.android.streaming.audio.Arguments as AudioArguments
+import se.svt.oss.android.streaming.audiotrack.Error as AudioTrackError
 import se.svt.oss.android.streaming.container.aac.Error as AacError
 import se.svt.oss.android.streaming.mediacodec.Error as MediaCodecError
 import se.svt.oss.android.streaming.streaming.hls.m3u.master.Error as HlsM3uMasterError
+import se.svt.oss.android.streaming.video.Arguments as VideoArguments
 
 // https://api.svt.se/video/ewAdr96
 private val MANIFEST_URL =
@@ -69,6 +64,7 @@ sealed class Error : Exception {
     data class MediaCodec(val error: MediaCodecError) : Error(error)
     object NoAlternateRenditionFound : Error()
     data class HlsM3uMaster(val error: HlsM3uMasterError) : Error(error)
+    data class AudioTrack(val error: AudioTrackError) : Error(error)
 }
 
 class MainActivity : AppCompatActivity() {
@@ -91,41 +87,15 @@ class MainActivity : AppCompatActivity() {
                     surfaceView.holder.surfaceHolderConfigurationFlow()
                         .mapNotNull { it }
                         .collect { surfaceHolderConfiguration ->
-                            // TODO: Don't redo all the work when we get a new surface
-                            // TODO: Note that we need to recreate the codec though
-
-                            data class VideoMediaCodecArguments(
-                                val format: Format,
-                                val width: Int,
-                                val height: Int,
-                            )
-                            val videoBufferIndexChannelProvider = SingleElementCache { videoMediaCodecArguments: VideoMediaCodecArguments ->
-                                MediaCodec.createByCodecName(
-                                    mediaCodecInfoFromFormat(codecInfos, videoMediaCodecArguments.format).orThrow().name
-                                )
-                                    .run {
-                                        val bufferIndicesChannel = videoInputBufferIndicesChannel()
-                                        configure(
-                                            MediaFormat().apply {
-                                                setString(KEY_MIME, videoMediaCodecArguments.format.mimeType)
-                                                setInteger(KEY_WIDTH, videoMediaCodecArguments.width)
-                                                setInteger(KEY_HEIGHT, videoMediaCodecArguments.height)
-                                            },
-                                            surfaceHolderConfiguration.surfaceHolder.surface,
-                                            null,
-                                            0
-                                        )
-
-                                        start()
-
-                                        bufferIndicesChannel
-                                    }
+                            val videoBufferIndexChannelProvider = SingleElementCache { arguments: VideoArguments ->
+                                mediaCodec(codecInfos, arguments, surfaceHolderConfiguration)
                             }
-
                             val audioBufferIndexChannelProvider = SingleElementCache { audioArguments: AudioArguments ->
-                                val audioTrackResult = audioTrack(audioArguments)
-
-                                mediaCodec(codecInfos, audioArguments, audioTrackResult.orThrow()) // TODO: Handle error
+                                audioTrack(audioArguments)
+                                    .mapErr(Error::AudioTrack)
+                                    .andThen { audioTrack ->
+                                    mediaCodec(codecInfos, audioArguments, audioTrack).mapErr(Error::MediaCodec)
+                                }
                             }
 
                             withContext(Dispatchers.IO) {
@@ -225,12 +195,13 @@ class MainActivity : AppCompatActivity() {
                                         .mapNotNull { it.ok } // TODO: Handle errors
                                         .buffer()
                                         .collect { pes ->
-                                            videoBufferIndexChannelProvider.get(VideoMediaCodecArguments(
+                                            videoBufferIndexChannelProvider.get(VideoArguments(
                                                 // TODO: Read from TS
                                                 Format.H264,
                                                 1280,
                                                 720
                                             ))
+                                                .orThrow() // TODO: Handle error
                                                 .receive { inputBuffer ->
                                                     inputBuffer.put(
                                                         // TODO: Don't block readRemaining, instead read as much as is available then read the rest at another time
