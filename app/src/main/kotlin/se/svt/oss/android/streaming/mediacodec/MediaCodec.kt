@@ -2,7 +2,9 @@ package se.svt.oss.android.streaming.mediacodec
 
 import android.media.AudioTrack
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.os.Build.VERSION.SDK_INT
 import android.util.Log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -13,10 +15,10 @@ import se.svt.oss.android.streaming.audiotrack.writeAllBlockingWithResult
 import se.svt.oss.android.streaming.format.Format
 import se.svt.oss.android.streaming.mapErr
 import se.svt.oss.android.streaming.okOrElse
-import java.lang.Exception
 import java.nio.ByteBuffer
 import java.time.Duration
 import java.util.concurrent.TimeUnit
+import se.svt.oss.android.streaming.audio.Arguments as AudioArguments
 
 sealed class Error: Exception {
     constructor() : super()
@@ -114,3 +116,42 @@ fun MediaCodec.audioInputBufferIndicesChannel(
         }
     })
 })
+
+fun mediaCodec(codecInfos: Array<MediaCodecInfo>, audioArguments: AudioArguments, audioTrack: AudioTrack) =
+    mediaCodecInfoFromFormat(codecInfos, audioArguments.format).andThen { mediaCodecInfo ->
+        MediaCodec.createByCodecName(mediaCodecInfo.name)
+            .run {
+                val bufferIndicesChannel = audioInputBufferIndicesChannel(audioTrack)
+
+                try {
+                    configure(
+                        MediaFormat().apply {
+                            if (SDK_INT >= 23) setFloat(
+                                MediaFormat.KEY_OPERATING_RATE,
+                                audioArguments.samplingFrequency.toFloat()
+                            )
+                            setInteger(
+                                MediaFormat.KEY_SAMPLE_RATE,
+                                audioArguments.samplingFrequency
+                            )
+                            setString(MediaFormat.KEY_MIME, Format.Aac.mimeType)
+                            setInteger(MediaFormat.KEY_CHANNEL_COUNT, audioArguments.channels)
+                            if (SDK_INT >= 23) setInteger(
+                                MediaFormat.KEY_PRIORITY,
+                                0 /* realtime */
+                            )
+                            audioArguments.audioSpecificConfigs.forEachIndexed { index, it ->
+                                setByteBuffer("csd-$index", ByteBuffer.wrap(it))
+                            }
+                        },
+                        null,
+                        null,
+                        0
+                    )
+                    start()
+                    Result.Success(bufferIndicesChannel)
+                } catch (e: MediaCodec.CodecException) {
+                    Result.Error(Error.CodecException(e))
+                }
+            }
+    }

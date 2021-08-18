@@ -3,12 +3,8 @@ package se.svt.oss.android.streaming
 import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
-import android.media.MediaFormat.KEY_CHANNEL_COUNT
 import android.media.MediaFormat.KEY_HEIGHT
 import android.media.MediaFormat.KEY_MIME
-import android.media.MediaFormat.KEY_OPERATING_RATE
-import android.media.MediaFormat.KEY_PRIORITY
-import android.media.MediaFormat.KEY_SAMPLE_RATE
 import android.media.MediaFormat.KEY_WIDTH
 import android.net.Uri
 import android.os.Build
@@ -41,7 +37,7 @@ import se.svt.oss.android.streaming.container.ts.streams.streams
 import se.svt.oss.android.streaming.container.ts.tsFlow
 import se.svt.oss.android.streaming.databinding.ActivityMainBinding
 import se.svt.oss.android.streaming.format.Format
-import se.svt.oss.android.streaming.mediacodec.audioInputBufferIndicesChannel
+import se.svt.oss.android.streaming.mediacodec.mediaCodec
 import se.svt.oss.android.streaming.mediacodec.mediaCodecInfoFromFormat
 import se.svt.oss.android.streaming.mediacodec.videoInputBufferIndicesChannel
 import se.svt.oss.android.streaming.streaming.hls.m3u.master.Type
@@ -49,7 +45,6 @@ import se.svt.oss.android.streaming.streaming.hls.m3u.master.parseMasterPlaylist
 import se.svt.oss.android.streaming.streaming.hls.m3u.media.parseMediaPlaylistM3u
 import se.svt.oss.android.streaming.streaming.hls.tsAsHls
 import se.svt.oss.android.streaming.surface.surfaceHolderConfigurationFlow
-import java.nio.ByteBuffer
 import java.time.Duration
 import kotlin.math.absoluteValue
 import se.svt.oss.android.streaming.audio.Arguments as AudioArguments
@@ -128,32 +123,9 @@ class MainActivity : AppCompatActivity() {
                             }
 
                             val audioBufferIndexChannelProvider = SingleElementCache { audioArguments: AudioArguments ->
-                                MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).orThrow().name)
-                                    .run {
-                                        val audioTrackResult = audioTrack(audioArguments)
+                                val audioTrackResult = audioTrack(audioArguments)
 
-                                        val bufferIndicesChannel =
-                                            audioInputBufferIndicesChannel(audioTrackResult.orThrow()) // TODO: Handle error
-
-                                        configure(
-                                            MediaFormat().apply {
-                                                setFloat(KEY_OPERATING_RATE, audioArguments.samplingFrequency.toFloat())
-                                                setInteger(KEY_SAMPLE_RATE, audioArguments.samplingFrequency)
-                                                setString(KEY_MIME, Format.Aac.mimeType)
-                                                setInteger(KEY_CHANNEL_COUNT, audioArguments.channels)
-                                                setInteger(KEY_PRIORITY, 0 /* realtime */)
-                                                audioArguments.audioSpecificConfigs.forEachIndexed { index, it ->
-                                                    setByteBuffer("csd-$index", ByteBuffer.wrap(it))
-                                                }
-                                            },
-                                            null,
-                                            null,
-                                            0
-                                        )
-                                        start()
-
-                                        bufferIndicesChannel
-                                    }
+                                mediaCodec(codecInfos, audioArguments, audioTrackResult.orThrow()) // TODO: Handle error
                             }
 
                             withContext(Dispatchers.IO) {
@@ -214,8 +186,10 @@ class MainActivity : AppCompatActivity() {
                                                     audioBufferIndexChannelProvider.get(AudioArguments(
                                                         packet.samplingFrequency,
                                                         listOf(packet.audioSpecificConfig),
-                                                        packet.channels
+                                                        packet.channels,
+                                                        Format.Aac
                                                     ))
+                                                        .orThrow() // TODO: Handle error
                                                         .receive { inputBuffer ->
                                                             inputBuffer.put(packet.data)
                                                             Duration.ofNanos(System.nanoTime())
