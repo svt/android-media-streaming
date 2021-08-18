@@ -195,7 +195,7 @@ class MainActivity : AppCompatActivity() {
                                             }
                                             result
                                         }
-                                        audioTrackResult.map { it.play() }
+                                        audioTrackResult.map(AudioTrack::play)
 
                                         val bufferIndicesChannel =
                                             audioInputBufferIndicesChannel(audioTrackResult.orThrow()) // TODO: Handle error
