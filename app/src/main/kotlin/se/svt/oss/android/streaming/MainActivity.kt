@@ -1,16 +1,5 @@
 package se.svt.oss.android.streaming
 
-import android.media.AudioAttributes
-import android.media.AudioAttributes.CONTENT_TYPE_UNKNOWN
-import android.media.AudioAttributes.USAGE_MEDIA
-import android.media.AudioFormat
-import android.media.AudioFormat.ENCODING_PCM_16BIT
-import android.media.AudioManager.AUDIO_SESSION_ID_GENERATE
-import android.media.AudioTrack
-import android.media.AudioTrack.MODE_STREAM
-import android.media.AudioTrack.STATE_INITIALIZED
-import android.media.AudioTrack.STATE_NO_STATIC_DATA
-import android.media.AudioTrack.STATE_UNINITIALIZED
 import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
@@ -23,7 +12,6 @@ import android.media.MediaFormat.KEY_SAMPLE_RATE
 import android.media.MediaFormat.KEY_WIDTH
 import android.net.Uri
 import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -38,7 +26,6 @@ import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
@@ -47,6 +34,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import se.svt.oss.android.streaming.audiotrack.audioTrack
 import se.svt.oss.android.streaming.cache.SingleElementCache
 import se.svt.oss.android.streaming.container.aac.aacFlow
 import se.svt.oss.android.streaming.container.ts.streams.streams
@@ -64,6 +52,7 @@ import se.svt.oss.android.streaming.surface.surfaceHolderConfigurationFlow
 import java.nio.ByteBuffer
 import java.time.Duration
 import kotlin.math.absoluteValue
+import se.svt.oss.android.streaming.audio.Arguments as AudioArguments
 import se.svt.oss.android.streaming.container.aac.Error as AacError
 import se.svt.oss.android.streaming.mediacodec.Error as MediaCodecError
 import se.svt.oss.android.streaming.streaming.hls.m3u.master.Error as HlsM3uMasterError
@@ -83,9 +72,6 @@ sealed class Error : Exception {
 
     data class Aac(val error: AacError) : Error(error)
     data class MediaCodec(val error: MediaCodecError) : Error(error)
-    object AudioTrackUninitialized : Error()
-    object AudioTrackNoStaticData : Error()
-    data class AudioTrackUnknownState(val state: Int) : Error()
     object NoAlternateRenditionFound : Error()
     data class HlsM3uMaster(val error: HlsM3uMasterError) : Error(error)
 }
@@ -141,89 +127,22 @@ class MainActivity : AppCompatActivity() {
                                     }
                             }
 
-                            data class AudioMediaCodecArguments(
-                                val samplingFrequency: Int,
-                                val audioSpecificConfigs: List<ByteArray>,
-                                val channels: Int
-                            ) {
-                                override fun equals(other: Any?): Boolean {
-                                    if (this === other) return true
-                                    if (javaClass != other?.javaClass) return false
-
-                                    other as AudioMediaCodecArguments
-
-                                    if (samplingFrequency != other.samplingFrequency) return false
-                                    if (audioSpecificConfigs.size != other.audioSpecificConfigs.size) return false
-                                    if (audioSpecificConfigs.zip(other.audioSpecificConfigs).any { (left, right) -> !left.contentEquals(right) }) return false
-                                    if (channels != other.channels) return false
-
-                                    return true
-                                }
-
-                                override fun hashCode(): Int {
-                                    var result = samplingFrequency
-                                    result = 31 * result + audioSpecificConfigs.hashCode()
-                                    result = 31 * result + channels
-                                    return result
-                                }
-                            }
-                            val audioBufferIndexChannelProvider = SingleElementCache { audioMediaCodecArguments: AudioMediaCodecArguments ->
+                            val audioBufferIndexChannelProvider = SingleElementCache { audioArguments: AudioArguments ->
                                 MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).orThrow().name)
                                     .run {
-                                        val audioTrackResult = AudioTrack(
-                                            AudioAttributes.Builder()
-                                                .setUsage(USAGE_MEDIA)
-                                                .setContentType(CONTENT_TYPE_UNKNOWN)
-                                                .setFlags(0)
-                                                .build(),
-                                            AudioFormat.Builder()
-                                                .setSampleRate(audioMediaCodecArguments.samplingFrequency)
-                                                .setChannelMask(when (audioMediaCodecArguments.channels) {
-                                                    1 -> AudioFormat.CHANNEL_OUT_MONO
-                                                    2 -> AudioFormat.CHANNEL_OUT_STEREO
-                                                    3 -> AudioFormat.CHANNEL_OUT_STEREO or AudioFormat.CHANNEL_OUT_FRONT_CENTER
-                                                    4 -> AudioFormat.CHANNEL_OUT_QUAD
-                                                    5 -> AudioFormat.CHANNEL_OUT_QUAD or AudioFormat.CHANNEL_OUT_FRONT_CENTER
-                                                    6 -> AudioFormat.CHANNEL_OUT_5POINT1
-                                                    7 -> AudioFormat.CHANNEL_OUT_5POINT1 or AudioFormat.CHANNEL_OUT_BACK_CENTER
-                                                    8 -> if (SDK_INT >= 23)
-                                                        AudioFormat.CHANNEL_OUT_7POINT1_SURROUND
-                                                    else
-                                                        AudioFormat.CHANNEL_OUT_5POINT1 or AudioFormat.CHANNEL_OUT_SIDE_LEFT or AudioFormat.CHANNEL_OUT_SIDE_RIGHT
-                                                    else -> AudioFormat.CHANNEL_INVALID
-                                                })
-                                                .setEncoding(ENCODING_PCM_16BIT) // TODO
-                                                .build(),
-                                            audioMediaCodecArguments.samplingFrequency,
-                                            MODE_STREAM,
-                                            AUDIO_SESSION_ID_GENERATE
-                                        ).let {
-                                            delay(500) // TODO: There's a race condition where AudioTrack hasn't initialized yet
-                                            val result: Result<AudioTrack, Error> = when (val state = it.state) {
-                                                STATE_UNINITIALIZED -> {
-                                                    Result.Error(Error.AudioTrackUninitialized)
-                                                }
-                                                STATE_INITIALIZED -> Result.Success(it)
-                                                STATE_NO_STATIC_DATA -> {
-                                                    Result.Error(Error.AudioTrackNoStaticData)
-                                                }
-                                                else -> Result.Error(Error.AudioTrackUnknownState(state))
-                                            }
-                                            result
-                                        }
-                                        audioTrackResult.map(AudioTrack::play)
+                                        val audioTrackResult = audioTrack(audioArguments)
 
                                         val bufferIndicesChannel =
                                             audioInputBufferIndicesChannel(audioTrackResult.orThrow()) // TODO: Handle error
 
                                         configure(
                                             MediaFormat().apply {
-                                                setFloat(KEY_OPERATING_RATE, audioMediaCodecArguments.samplingFrequency.toFloat())
-                                                setInteger(KEY_SAMPLE_RATE, audioMediaCodecArguments.samplingFrequency)
+                                                setFloat(KEY_OPERATING_RATE, audioArguments.samplingFrequency.toFloat())
+                                                setInteger(KEY_SAMPLE_RATE, audioArguments.samplingFrequency)
                                                 setString(KEY_MIME, Format.Aac.mimeType)
-                                                setInteger(KEY_CHANNEL_COUNT, audioMediaCodecArguments.channels)
+                                                setInteger(KEY_CHANNEL_COUNT, audioArguments.channels)
                                                 setInteger(KEY_PRIORITY, 0 /* realtime */)
-                                                audioMediaCodecArguments.audioSpecificConfigs.forEachIndexed { index, it ->
+                                                audioArguments.audioSpecificConfigs.forEachIndexed { index, it ->
                                                     setByteBuffer("csd-$index", ByteBuffer.wrap(it))
                                                 }
                                             },
@@ -292,7 +211,7 @@ class MainActivity : AppCompatActivity() {
                                             packetResult
                                                 .mapErr(Error::Aac)
                                                 .andThen { packet ->
-                                                    audioBufferIndexChannelProvider.get(AudioMediaCodecArguments(
+                                                    audioBufferIndexChannelProvider.get(AudioArguments(
                                                         packet.samplingFrequency,
                                                         listOf(packet.audioSpecificConfig),
                                                         packet.channels
