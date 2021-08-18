@@ -8,6 +8,9 @@ import android.media.AudioFormat.ENCODING_PCM_16BIT
 import android.media.AudioManager.AUDIO_SESSION_ID_GENERATE
 import android.media.AudioTrack
 import android.media.AudioTrack.MODE_STREAM
+import android.media.AudioTrack.STATE_INITIALIZED
+import android.media.AudioTrack.STATE_NO_STATIC_DATA
+import android.media.AudioTrack.STATE_UNINITIALIZED
 import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
@@ -74,6 +77,9 @@ data class PresentationTime(
 sealed class Error {
     data class Aac(val error: AacError) : Error()
     data class MediaCodec(val error: MediaCodecError) : Error()
+    object AudioTrackUninitialized : Error()
+    object AudioTrackNoStaticData : Error()
+    data class AudioTrackUnknownState(val state: Int) : Error()
 }
 
 class MainActivity : AppCompatActivity() {
@@ -131,28 +137,62 @@ class MainActivity : AppCompatActivity() {
                                 val samplingFrequency: Int,
                                 val audioSpecificConfigs: List<ByteArray>,
                                 val channels: Int
-                            )
+                            ) {
+                                override fun equals(other: Any?): Boolean {
+                                    if (this === other) return true
+                                    if (javaClass != other?.javaClass) return false
+
+                                    other as AudioMediaCodecArguments
+
+                                    if (samplingFrequency != other.samplingFrequency) return false
+                                    if (audioSpecificConfigs.size != other.audioSpecificConfigs.size) return false
+                                    if (audioSpecificConfigs.zip(other.audioSpecificConfigs).any { (left, right) -> !left.contentEquals(right) }) return false
+                                    if (channels != other.channels) return false
+
+                                    return true
+                                }
+
+                                override fun hashCode(): Int {
+                                    var result = samplingFrequency
+                                    result = 31 * result + audioSpecificConfigs.hashCode()
+                                    result = 31 * result + channels
+                                    return result
+                                }
+                            }
                             val audioBufferIndexChannelProvider = SingleElementCache { audioMediaCodecArguments: AudioMediaCodecArguments ->
                                 MediaCodec.createByCodecName(mediaCodecInfoFromFormat(codecInfos, Format.Aac).ok!!.name)
                                     .run {
+                                        val audioTrackResult = AudioTrack(
+                                            AudioAttributes.Builder()
+                                                .setUsage(USAGE_MEDIA)
+                                                .setContentType(CONTENT_TYPE_UNKNOWN)
+                                                .setFlags(0)
+                                                .build(),
+                                            AudioFormat.Builder()
+                                                .setSampleRate(audioMediaCodecArguments.samplingFrequency)
+                                                .setChannelMask(12) // TODO
+                                                .setEncoding(ENCODING_PCM_16BIT) // TODO
+                                                .build(),
+                                            audioMediaCodecArguments.samplingFrequency,
+                                            MODE_STREAM,
+                                            AUDIO_SESSION_ID_GENERATE
+                                        ).let {
+                                            val result: Result<AudioTrack, Error> = when (val state = it.state) {
+                                                STATE_UNINITIALIZED -> {
+                                                    Result.Error(Error.AudioTrackUninitialized)
+                                                }
+                                                STATE_INITIALIZED -> Result.Success(it)
+                                                STATE_NO_STATIC_DATA -> {
+                                                    Result.Error(Error.AudioTrackNoStaticData)
+                                                }
+                                                else -> Result.Error(Error.AudioTrackUnknownState(state))
+                                            }
+                                            result
+                                        }
+                                        audioTrackResult.map { it.play() }
+
                                         val bufferIndicesChannel =
-                                            audioInputBufferIndicesChannel(AudioTrack(
-                                                AudioAttributes.Builder()
-                                                    .setUsage(USAGE_MEDIA)
-                                                    .setContentType(CONTENT_TYPE_UNKNOWN)
-                                                    .setFlags(0)
-                                                    .build(),
-                                                AudioFormat.Builder()
-                                                    .setSampleRate(audioMediaCodecArguments.samplingFrequency)
-                                                    .setChannelMask(12) // TODO
-                                                    .setEncoding(ENCODING_PCM_16BIT) // TODO
-                                                    .build(),
-                                                audioMediaCodecArguments.samplingFrequency,
-                                                MODE_STREAM,
-                                                AUDIO_SESSION_ID_GENERATE
-                                            ).apply {
-                                                play()
-                                            })
+                                            audioInputBufferIndicesChannel(audioTrackResult.ok!!) // TODO: Handle error
 
                                         configure(
                                             MediaFormat().apply {
