@@ -38,6 +38,7 @@ import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.collect
@@ -197,7 +198,7 @@ class MainActivity : AppCompatActivity() {
                                             MODE_STREAM,
                                             AUDIO_SESSION_ID_GENERATE
                                         ).let {
-                                            Thread.sleep(500) // TODO: There's a race condition where AudioTrack hasn't initialized yet
+                                            delay(500) // TODO: There's a race condition where AudioTrack hasn't initialized yet
                                             val result: Result<AudioTrack, Error> = when (val state = it.state) {
                                                 STATE_UNINITIALIZED -> {
                                                     Result.Error(Error.AudioTrackUninitialized)

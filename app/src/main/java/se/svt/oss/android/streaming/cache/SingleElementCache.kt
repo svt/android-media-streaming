@@ -5,10 +5,10 @@ package se.svt.oss.android.streaming.cache
  *
  * Note that this class is not thread-safe!
  */
-class SingleElementCache<K, V>(private val provider: (K) -> V) {
+class SingleElementCache<K, V>(private val provider: suspend (K) -> V) {
     private var cache: Pair<K, V>? = null
 
-    fun get(arg: K): V = cache
+    suspend fun get(arg: K): V = cache
         ?.takeIf { (key, _) -> key == arg }
         ?.let { (_, value) -> value } ?: provider(arg).also { cache = arg to it }
 }
