@@ -45,6 +45,7 @@ import se.svt.oss.android.streaming.audiotrack.Error as AudioTrackError
 import se.svt.oss.android.streaming.container.aac.Error as AacError
 import se.svt.oss.android.streaming.mediacodec.Error as MediaCodecError
 import se.svt.oss.android.streaming.streaming.hls.m3u.master.Error as HlsM3uMasterError
+import se.svt.oss.android.streaming.streaming.hls.m3u.media.Error as HlsM3uMediaError
 import se.svt.oss.android.streaming.video.Arguments as VideoArguments
 
 // https://api.svt.se/video/ewAdr96
@@ -63,7 +64,9 @@ sealed class Error : Exception {
     data class Aac(val error: AacError) : Error(error)
     data class MediaCodec(val error: MediaCodecError) : Error(error)
     object NoAlternateRenditionFound : Error()
+    object NoEntryFound : Error()
     data class HlsM3uMaster(val error: HlsM3uMasterError) : Error(error)
+    data class HlsM3uMedia(val error: HlsM3uMediaError) : Error(error)
     data class AudioTrack(val error: AudioTrackError) : Error(error)
 }
 
@@ -112,9 +115,8 @@ class MainActivity : AppCompatActivity() {
                                     .andThen { playlist ->
                                         playlist.alternateRenditions.find { it.type == Type.AUDIO && it.channels == 2 && it.language == "sv" }
                                             .okOr(Error.NoAlternateRenditionFound)
-                                }
-                                    .orThrow()
-                                    .let { audio ->
+                                    }
+                                    .andThen { audio ->
                                         client
                                             .get<HttpResponse>(audio.uri.toString())
                                             .receive<ByteReadChannel>()
@@ -123,26 +125,30 @@ class MainActivity : AppCompatActivity() {
 
                                 // TODO: Pick by bandwidth and/or a combination
                                 val videoMediaPlaylist = masterPlaylist.orThrow().entries.minByOrNull { entry ->
-                                    // TODO: Don't crash
-                                    entry.resolution!!.let { (width, height) ->
+                                    entry.resolution?.let { (width, height) ->
                                         (width - surfaceHolderConfiguration.width).absoluteValue + (height - surfaceHolderConfiguration.height).absoluteValue
-                                    }
-                                }!!.let { entry ->
-                                    client
-                                        .get<HttpResponse>(entry.uri.toString())
-                                        .receive<ByteReadChannel>()
-                                        .parseMediaPlaylistM3u(entry.uri.removeLastPathSegmentIfAny())
+                                    } ?: Int.MAX_VALUE
                                 }
+                                    .okOr(Error.NoEntryFound)
+                                    .andThen { entry ->
+                                        client
+                                            .get<HttpResponse>(entry.uri.toString())
+                                            .receive<ByteReadChannel>()
+                                            .parseMediaPlaylistM3u(entry.uri.removeLastPathSegmentIfAny())
+                                            .mapErr(Error::HlsM3uMedia)
+                                    }
 
                                 // TODO: This must be done in parallel with video below, use async {}
                                 val deferredAudio = async {
                                     audioMediaPlaylist.orThrow().entries.map { it.uri } // TODO: Handle errors
                                         .asFlow()
                                         .map {
-                                            Log.e(MainActivity::class.java.simpleName, "Audio fetch $it")
-                                            val get: HttpResponse = client.get(it.toString())
-                                            val channel: ByteReadChannel = get.receive()
-                                            channel
+                                            Log.e(
+                                                MainActivity::class.java.simpleName,
+                                                "Audio fetch $it"
+                                            )
+                                            client.get<HttpResponse>(it.toString())
+                                                .receive<ByteReadChannel>()
                                         }
                                         .buffer()
                                         .flatMapConcat {
@@ -159,12 +165,13 @@ class MainActivity : AppCompatActivity() {
                                                         packet.channels,
                                                         Format.Aac
                                                     ))
-                                                        .orThrow() // TODO: Handle error
-                                                        .receive { inputBuffer ->
-                                                            inputBuffer.put(packet.data)
-                                                            Duration.ofNanos(System.nanoTime())
+                                                        .andThen {
+                                                            it.receive { inputBuffer ->
+                                                                inputBuffer.put(packet.data)
+                                                                Duration.ofNanos(System.nanoTime())
+                                                            }
+                                                            .mapErr(Error::MediaCodec)
                                                         }
-                                                        .mapErr(Error::MediaCodec)
                                                 }
                                                 .mapErr {
                                                     Log.e(MainActivity::class.java.simpleName, "$it")
@@ -174,13 +181,12 @@ class MainActivity : AppCompatActivity() {
                                 }
 
                                 val deferredVideo = async {
-                                    videoMediaPlaylist.orThrow().entries.map { it.uri } // TODO: Handle errors
+                                    videoMediaPlaylist.orThrow().entries // TODO: Handle errors
                                         .asFlow()
                                         .map {
-                                            Log.e(MainActivity::class.java.simpleName, "Fetch $it")
-                                            val get: HttpResponse = client.get(it.toString())
-                                            val channel: ByteReadChannel = get.receive()
-                                            channel
+                                            Log.e(MainActivity::class.java.simpleName, "Video Fetch ${it.uri}")
+                                            client.get<HttpResponse>(it.uri.toString())
+                                                .receive<ByteReadChannel>()
                                         }
                                         .buffer()
                                         .flatMapConcat { channel ->
