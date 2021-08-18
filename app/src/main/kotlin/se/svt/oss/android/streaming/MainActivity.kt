@@ -140,7 +140,6 @@ class MainActivity : AppCompatActivity() {
                                         }
                                 }
 
-                                // TODO: This must be done in parallel with video below, use async {}
                                 val deferredAudio = async {
                                     audioMediaPlaylist.orThrow().entries.map { it.uri } // TODO: Handle errors
                                         .asFlow()
