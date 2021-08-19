@@ -1,0 +1,63 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+
+Files: **/*.gitignore
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: .gitignore
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: *.md
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: *.pro
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: *.yml
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: *.xml
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: *.json
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: *.gradle
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: *.gradle.kts
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+Files: *.properties
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+
+Files: *.json
+Copyright: 2021 Sveriges Television AB
+License: CC0-1.0
+
+
+# Third-party files.
+
+
+Files: gradlew*
+Copyright: 2007-2020 The original author or authors <info@gradle.com>
+License: Apache-2.0
+
+Files: gradle/*
+Copyright: 2007-2020 The original author or authors <info@gradle.com>
+License: Apache-2.0
+
+
+Files: app/src/main/res/**/*.png
+Copyright: 2007-2020 The original author or authors <info@android.studio.com> //TODO-we need to verify this as this is probally under a more liberal license
+License: CC-BY-NC-ND-4.0
