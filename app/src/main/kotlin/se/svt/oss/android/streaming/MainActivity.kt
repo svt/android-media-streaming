@@ -144,16 +144,15 @@ class MainActivity : AppCompatActivity() {
                                         }
                                 }
 
-                                // TODO: This must be done in parallel with video below, use async {}
                                 val deferredAudio = async {
-                                    audioMediaPlaylist.orThrow().entries.map { it.uri } // TODO: Handle errors
+                                    audioMediaPlaylist.orThrow().entries // TODO: Handle errors
                                         .asFlow()
                                         .map {
                                             Log.e(
                                                 MainActivity::class.java.simpleName,
-                                                "Audio fetch $it"
+                                                "Audio fetch ${it.uri}"
                                             )
-                                            client.get<HttpResponse>(it.toString())
+                                            client.get<HttpResponse>(it.uri.toString())
                                                 .receive<ByteReadChannel>()
                                         }
                                         .buffer()

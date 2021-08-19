@@ -86,7 +86,7 @@ private abstract class Callback(private val inputBufferIndicesChannel: Channel<R
 }
 
 @ExperimentalCoroutinesApi
-fun MediaCodec.videoInputBufferIndicesChannel() = InputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
+private fun MediaCodec.videoInputBufferIndicesChannel() = InputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
     setCallback(object : Callback(this) {
         override fun onOutputBufferAvailable(
             codec: MediaCodec,
@@ -102,7 +102,7 @@ fun MediaCodec.videoInputBufferIndicesChannel() = InputBufferIndicesChannel(this
 })
 
 @ExperimentalCoroutinesApi
-fun MediaCodec.audioInputBufferIndicesChannel(
+private fun MediaCodec.audioInputBufferIndicesChannel(
     audioTrack: AudioTrack
 ) = InputBufferIndicesChannel(this, Channel<Result<Int, Error>>(capacity = BUFFERED).apply {
     setCallback(object : Callback(this) {
